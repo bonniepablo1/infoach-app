@@ -1396,35 +1396,52 @@ function UploadScreen({ onBack, onImport }) {
   };
 
   const handleFile = async (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setFile(f); setParseError(""); setStage("reading");
+        const f = e.target.files?.[0];
+        if (!f) return;
+        setFile(f); setParseError(""); setStage("reading");
 
-    // Try to read using FileReader — parse text directly
-    try {
-      // We use a simple approach: convert to ArrayBuffer then read text
-      const arrayBuffer = await f.arrayBuffer();
-      // Check if PDF starts with correct header
-      const header = new Uint8Array(arrayBuffer, 0, 5);
-      const headerStr = String.fromCharCode(...header);
-      if (!headerStr.startsWith("%PDF")) {
-        setParseError("This does not look like a PDF file. Please upload your M-PESA statement PDF.");
-        setStage("idle"); return;
-      }
-      // Extract text content (simple approach for unencrypted PDFs)
-      const text = new TextDecoder("latin1").decode(arrayBuffer);
-      const txns = parseStatementText(text);
-      if (txns.length > 0) {
-        setParsedTxns(txns); setStage("preview");
-      } else {
-        // Might be password protected or different format
-        setStage("password_needed");
-      }
-    } catch (err) {
-      setParseError("Could not read PDF. Try downloading a fresh copy from Safaricom.");
-      setStage("idle");
-    }
-  };
+        try {
+            const arrayBuffer = await f.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+
+            // Check PDF header
+            const headerStr = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]);
+            if (!headerStr.startsWith("%PDF")) {
+            setParseError("This does not look like a PDF file. Please upload your M-PESA statement PDF.");
+            setStage("idle"); return;
+            }
+
+            // ── CHECK IF PASSWORD PROTECTED ──────────────────────────────
+            // Encrypted PDFs contain /Encrypt in their cross-reference table
+            const pdfText = new TextDecoder("latin1").decode(arrayBuffer);
+            const isEncrypted = /\/Encrypt\b/.test(pdfText);
+
+            if (isEncrypted) {
+            // File is password protected — ask for password
+            setStage("password_needed");
+            return;
+            }
+
+            // ── NOT ENCRYPTED — parse directly ───────────────────────────
+            setStage("parsing");
+            const txns = parseStatementText(pdfText);
+
+            if (txns.length > 0) {
+            setParsedTxns(txns);
+            setStage("preview");
+            } else {
+            // Parsed fine but no transactions found — different format
+            setParseError(
+                "No transactions found in this PDF. Make sure you are uploading a Safaricom M-PESA statement (dial *334# → My Account → Statement). If your statement is from a different provider, use the + button to log transactions manually."
+            );
+            setStage("idle");
+            }
+
+        } catch (err) {
+            setParseError("Could not read PDF. Try downloading a fresh copy from Safaricom.");
+            setStage("idle");
+        }
+    };
 
   const handlePasswordSubmit = () => {
     setPwdError("Password-protected PDFs require the Safaricom app to unlock first. Please open the PDF in Adobe Reader with your password, then re-save it without a password and upload again.");
