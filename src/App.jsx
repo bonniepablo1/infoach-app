@@ -1,13 +1,9 @@
 
-// InFoach v5.0 — Financial Coach · Mshauri wa Fedha
-// Mwaniki Bonface | CT204/106214/21 | Meru University of Science and Technology
-// NOTE FOR CELL 16: This file uses no ES module imports.
-// React hooks are accessed via the React global (loaded by CDN).
-// ReactDOM.createRoot mount is at the bottom of this file.
+import { useState, useEffect } from "react";
 
-const { useState, useEffect } = React;
-
-// ── PDF.js — loaded on demand, not at startup ──────────────────────────────
+// ── PDF.js — loaded on demand via script injection ─────────────────────────
+// We load it dynamically so it does not bloat the Vite bundle.
+// window.pdfjsLib is available once the script executes.
 let _pdfjs = null;
 async function loadPdfJs() {
   if (_pdfjs) return _pdfjs;
@@ -20,7 +16,8 @@ async function loadPdfJs() {
       return;
     }
     const script = document.createElement("script");
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    script.src =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
     script.onload = () => {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc =
         "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -39,7 +36,10 @@ const API_URL = "https://daktari0-infoach-api.hf.space";
 
 // ── JWT token management ───────────────────────────────────────────────────
 let _authToken = null;
-try { const s = localStorage.getItem("infoach:token"); if (s) _authToken = s; } catch (_) {}
+try {
+  const s = localStorage.getItem("infoach:token");
+  if (s) _authToken = s;
+} catch (_) {}
 
 function setToken(token) {
   _authToken = token;
@@ -53,10 +53,17 @@ async function apiFetch(path, opts = {}) {
   const headers = { "Content-Type": "application/json", ...opts.headers };
   if (_authToken) headers["Authorization"] = `Bearer ${_authToken}`;
   const res = await fetch(`${API_URL}${path}`, { ...opts, headers });
-  if (res.status === 401) { setToken(null); window.location.reload(); return null; }
+  if (res.status === 401) {
+    setToken(null);
+    window.location.reload();
+    return null;
+  }
   if (!res.ok) {
     let detail = `API error ${res.status}`;
-    try { const e = await res.json(); detail = e.detail || detail; } catch (_) {}
+    try {
+      const e = await res.json();
+      detail = e.detail || detail;
+    } catch (_) {}
     throw new Error(detail);
   }
   const text = await res.text();
@@ -71,18 +78,31 @@ async function apiRegister(form) {
   const data = await apiFetch("/auth/register", {
     method: "POST",
     body: JSON.stringify({
-      phone: normalisePhone(form.phone), name: form.name, password: form.password,
-      persona: form.persona, job_title: form.job_title,
-      is_married: form.is_married, n_kids: form.n_kids,
-      monthly_rent: form.monthly_rent, savings_type: form.savings_type,
-      borrowing_habit: form.borrowing_habit, fuliza_attitude: form.fuliza_attitude,
-      has_sha: form.has_sha, has_nssf: form.has_nssf,
-      sends_remittance: form.sends_remittance, remittance_amount: form.remittance_amount,
-      tithe_amount: form.tithe_amount,
+      phone:             normalisePhone(form.phone),
+      name:              form.name,
+      password:          form.password,
+      persona:           form.persona,
+      job_title:         form.job_title,
+      is_married:        form.is_married,
+      n_kids:            form.n_kids,
+      monthly_rent:      form.monthly_rent,
+      savings_type:      form.savings_type,
+      borrowing_habit:   form.borrowing_habit,
+      fuliza_attitude:   form.fuliza_attitude,
+      has_sha:           form.has_sha,
+      has_nssf:          form.has_nssf,
+      sends_remittance:  form.sends_remittance,
+      remittance_amount: form.remittance_amount,
+      tithe_amount:      form.tithe_amount,
     }),
   });
   setToken(data.token);
-  try { localStorage.setItem(`infoach:user:${data.user.phone}`, JSON.stringify(data.user)); } catch (_) {}
+  try {
+    localStorage.setItem(
+      `infoach:user:${data.user.phone}`,
+      JSON.stringify(data.user)
+    );
+  } catch (_) {}
   return data.user;
 }
 
@@ -92,39 +112,54 @@ async function apiLogin(phone, password) {
     body: JSON.stringify({ phone: normalisePhone(phone), password }),
   });
   setToken(data.token);
-  try { localStorage.setItem(`infoach:user:${data.user.phone}`, JSON.stringify(data.user)); } catch (_) {}
+  try {
+    localStorage.setItem(
+      `infoach:user:${data.user.phone}`,
+      JSON.stringify(data.user)
+    );
+  } catch (_) {}
   return data.user;
 }
 
 async function apiLoadTxns() {
-  try { const d = await apiFetch("/transactions?limit=5000"); return d?.transactions || []; }
-  catch (_) { return []; }
+  try {
+    const d = await apiFetch("/transactions?limit=5000");
+    return d?.transactions || [];
+  } catch (_) {
+    return [];
+  }
 }
 
 async function apiSaveTxns(txns) {
   try {
     await apiFetch("/transactions", {
       method: "POST",
-      body: JSON.stringify(txns.map(t => ({
-        id: String(t.id || Date.now()), date: t.date, amount: t.amount,
-        balance: t.balance || 0, category: t.category || "other",
-        description: t.description || "", source: t.source || "manual",
-        receipt: t.receipt || "",
-      }))),
+      body: JSON.stringify(
+        txns.map((t) => ({
+          id:          String(t.id || Date.now()),
+          date:        t.date,
+          amount:      t.amount,
+          balance:     t.balance || 0,
+          category:    t.category || "other",
+          description: t.description || "",
+          source:      t.source || "manual",
+          receipt:     t.receipt || "",
+        }))
+      ),
     });
   } catch (_) {}
 }
 
 async function apiDeleteTxn(id) {
-  try { await apiFetch(`/transactions/${id}`, { method: "DELETE" }); } catch (_) {}
-}
-
-async function apiAnalyze() {
-  try { return await apiFetch("/coaching/analyze", { method: "POST" }); } catch (_) { return null; }
+  try {
+    await apiFetch(`/transactions/${id}`, { method: "DELETE" });
+  } catch (_) {}
 }
 
 async function wakeUpAPI() {
-  try { await fetch(`${API_URL}/`); } catch (_) {}
+  try {
+    await fetch(`${API_URL}/`);
+  } catch (_) {}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -132,67 +167,99 @@ async function wakeUpAPI() {
 // ═══════════════════════════════════════════════════════════════════════════
 const OCCUPATION_GROUPS = [
   {
-    persona: "Daily Hustler", label: "Daily Hustler / Msukumo wa Kila Siku",
+    persona: "Daily Hustler",
+    label: "Daily Hustler / Msukumo wa Kila Siku",
     description: "Earn money daily from various small activities",
     descSw: "Kupata pesa kila siku kutoka shughuli ndogo ndogo",
-    jobs: ["Street vendor / Muuzaji mtaani","Hawker / Hawker","Casual labourer / Mfanyakazi wa muda",
-           "Delivery rider / Mpiga mbio wa delivery","Car wash / Kuosha magari",
-           "Shoe shiner / Mpiga rangi viatu","Porter / Mpeba","Market porter / Mchukuzi wa soko",
-           "Other daily work / Kazi nyingine za kila siku"],
+    jobs: [
+      "Street vendor / Muuzaji mtaani", "Hawker / Hawker",
+      "Casual labourer / Mfanyakazi wa muda",
+      "Delivery rider / Mpiga mbio wa delivery",
+      "Car wash / Kuosha magari", "Shoe shiner / Mpiga rangi viatu",
+      "Porter / Mpeba", "Market porter / Mchukuzi wa soko",
+      "Other daily work / Kazi nyingine za kila siku",
+    ],
   },
   {
-    persona: "Small-Scale Trader", label: "Small-Scale Trader / Mfanyabiashara Mdogo",
+    persona: "Small-Scale Trader",
+    label: "Small-Scale Trader / Mfanyabiashara Mdogo",
     description: "Sell goods from a stall, shop or market",
     descSw: "Kuuza bidhaa dukani, stendi au sokoni",
-    jobs: ["Market stall / Stendi ya soko","Vegetable seller / Muuzaji mboga",
-           "Fruit seller / Muuzaji matunda","Grocery / Duka la vyakula",
-           "Clothes seller / Muuzaji nguo","Electronics seller / Muuzaji elektroniki",
-           "Butcher / Mchinjaji","Fish monger / Muuzaji samaki",
-           "Hardware / Muuzaji vifaa vya ujenzi","General shop / Duka la jumla",
-           "Other trading / Biashara nyingine"],
+    jobs: [
+      "Market stall / Stendi ya soko", "Vegetable seller / Muuzaji mboga",
+      "Fruit seller / Muuzaji matunda", "Grocery / Duka la vyakula",
+      "Clothes seller / Muuzaji nguo", "Electronics seller / Muuzaji elektroniki",
+      "Butcher / Mchinjaji", "Fish monger / Muuzaji samaki",
+      "Hardware / Muuzaji vifaa vya ujenzi", "General shop / Duka la jumla",
+      "Other trading / Biashara nyingine",
+    ],
   },
   {
-    persona: "Artisan - Stable", label: "Skilled Artisan (Stable) / Fundi (Imara)",
+    persona: "Artisan - Stable",
+    label: "Skilled Artisan (Stable) / Fundi (Imara)",
     description: "Skilled trade with regular clients and steady work",
     descSw: "Fundi mwenye wateja wa kawaida na kazi ya uhakika",
-    jobs: ["Carpenter / Seremala","Electrician / Fundi umeme","Plumber / Fundi bomba",
-           "Welder / Fundi chuma","Mechanic / Fundi gari","Mason / Mwashi",
-           "Painter / Mpigaji rangi","Tailor (established) / Fundi kushona (imara)",
-           "Electronics repair / Fundi elektroniki","Other skilled trade (stable) / Ufundi mwingine (imara)"],
+    jobs: [
+      "Carpenter / Seremala", "Electrician / Fundi umeme",
+      "Plumber / Fundi bomba", "Welder / Fundi chuma",
+      "Mechanic / Fundi gari", "Mason / Mwashi",
+      "Painter / Mpigaji rangi", "Tailor (established) / Fundi kushona (imara)",
+      "Electronics repair / Fundi elektroniki",
+      "Other skilled trade (stable) / Ufundi mwingine (imara)",
+    ],
   },
   {
-    persona: "Artisan - Struggling", label: "Skilled Artisan (Struggling) / Fundi (Anayojitahidi)",
+    persona: "Artisan - Struggling",
+    label: "Skilled Artisan (Struggling) / Fundi (Anayojitahidi)",
     description: "Skilled work but irregular jobs and unstable income",
     descSw: "Fundi mwenye kazi za nasibu na mapato yasiyotabirika",
-    jobs: ["Casual artisan / Fundi wa nasibu","Tailor (casual) / Fundi kushona (nasibu)",
-           "Shoe repairer / Fundi viatu","Jua Kali artisan / Fundi Jua Kali",
-           "Small repairs / Marekebisho madogo",
-           "Other skilled trade (struggling) / Ufundi mwingine (anayojitahidi)"],
+    jobs: [
+      "Casual artisan / Fundi wa nasibu",
+      "Tailor (casual) / Fundi kushona (nasibu)",
+      "Shoe repairer / Fundi viatu", "Jua Kali artisan / Fundi Jua Kali",
+      "Small repairs / Marekebisho madogo",
+      "Other skilled trade (struggling) / Ufundi mwingine (anayojitahidi)",
+    ],
   },
   {
-    persona: "Boda Boda Operator", label: "Boda Boda / Pikipiki",
+    persona: "Boda Boda Operator",
+    label: "Boda Boda / Pikipiki",
     description: "Motorcycle taxi or delivery operator",
     descSw: "Dereva wa pikipiki au delivery",
-    jobs: ["Boda boda rider / Dereva wa boda boda","Motorcycle taxi / Teksi ya pikipiki",
-           "Motorcycle delivery / Delivery ya pikipiki","Tuk-tuk operator / Dereva wa tuk-tuk"],
+    jobs: [
+      "Boda boda rider / Dereva wa boda boda",
+      "Motorcycle taxi / Teksi ya pikipiki",
+      "Motorcycle delivery / Delivery ya pikipiki",
+      "Tuk-tuk operator / Dereva wa tuk-tuk",
+    ],
   },
   {
-    persona: "Agricultural Worker", label: "Agricultural Worker / Mkulima",
+    persona: "Agricultural Worker",
+    label: "Agricultural Worker / Mkulima",
     description: "Farming, livestock or fishing as main income",
     descSw: "Kilimo, mifugo au uvuvi kama chanzo kikuu cha mapato",
-    jobs: ["Smallholder farmer / Mkulima mdogo","Livestock keeper / Mfugaji",
-           "Fisher / Mvuvi","Farm worker / Mfanyakazi wa shamba",
-           "Dairy farmer / Mfugaji wa ng'ombe maziwa","Poultry farmer / Mfugaji wa kuku",
-           "Horticulture / Bustani","Other farming / Kilimo kingine"],
+    jobs: [
+      "Smallholder farmer / Mkulima mdogo", "Livestock keeper / Mfugaji",
+      "Fisher / Mvuvi", "Farm worker / Mfanyakazi wa shamba",
+      "Dairy farmer / Mfugaji wa ng'ombe maziwa",
+      "Poultry farmer / Mfugaji wa kuku", "Horticulture / Bustani",
+      "Other farming / Kilimo kingine",
+    ],
   },
   {
-    persona: "Struggling Entrepreneur", label: "Entrepreneur / Mjasiriamali",
+    persona: "Struggling Entrepreneur",
+    label: "Entrepreneur / Mjasiriamali",
     description: "Running a small business with employees or fixed costs",
     descSw: "Kuendesha biashara ndogo yenye wafanyakazi au gharama za kudumu",
-    jobs: ["Small restaurant / Hoteli ndogo","Salon / Saluni","Barbershop / Kinyozi",
-           "Pharmacy / Duka la dawa","Cyber cafe / Saiber cafe","Printing / Uchapishaji",
-           "Mpesa agent / Wakala wa M-PESA","Fuel station attendant / Mfanyakazi wa kituo cha mafuta",
-           "Wholesale distributor / Msambazaji","Other small business / Biashara nyingine ndogo"],
+    jobs: [
+      "Small restaurant / Hoteli ndogo", "Salon / Saluni",
+      "Barbershop / Kinyozi", "Pharmacy / Duka la dawa",
+      "Cyber cafe / Saiber cafe", "Printing / Uchapishaji",
+      "Mpesa agent / Wakala wa M-PESA",
+      "Fuel station attendant / Mfanyakazi wa kituo cha mafuta",
+      "Wholesale distributor / Msambazaji",
+      "Other small business / Biashara nyingine ndogo",
+    ],
   },
 ];
 
@@ -262,16 +329,16 @@ const TIER_CONFIG = {
 // ═══════════════════════════════════════════════════════════════════════════
 function computeFeatures(transactions) {
   if (!transactions || transactions.length === 0) return null;
-  const pdfTxns    = transactions.filter(t => t.receipt);
-  const manualTxns = transactions.filter(t => !t.receipt);
+  const pdfTxns    = transactions.filter((t) => t.receipt);
+  const manualTxns = transactions.filter((t) => !t.receipt);
   const primary    = pdfTxns.length > 0 ? pdfTxns : manualTxns;
-  const txns       = primary.map(t => ({ ...t, amount: parseFloat(t.amount) }));
+  const txns       = primary.map((t) => ({ ...t, amount: parseFloat(t.amount) }));
 
   const LOAN_CATS = new Set(["digital_loan_received","fuliza_draw","mshwari_withdrawal","sacco_withdrawal","chama_withdrawal","other","reversal"]);
   const DEBT_CATS = new Set(["digital_loan_repayment","fuliza_repayment","mshwari_deposit","sacco_contribution","chama_contribution"]);
 
   const byDate = {};
-  txns.forEach(t => {
+  txns.forEach((t) => {
     const d = (t.date || "").slice(0, 10);
     if (!d || d.length < 10) return;
     const yr = parseInt(d.slice(0, 4));
@@ -283,55 +350,104 @@ function computeFeatures(transactions) {
   const days = Object.keys(byDate).sort();
   if (days.length === 0) return null;
 
-  const dailyEarned = days.map(d =>
-    byDate[d].filter(t => t.amount > 0 && !LOAN_CATS.has(t.category)).reduce((s, t) => s + t.amount, 0)
+  const dailyEarned = days.map((d) =>
+    byDate[d]
+      .filter((t) => t.amount > 0 && !LOAN_CATS.has(t.category))
+      .reduce((s, t) => s + t.amount, 0)
   );
-  const earningDays = dailyEarned.filter(v => v >= 10);
-  const incomeMean  = earningDays.length > 0 ? earningDays.reduce((a, b) => a + b, 0) / earningDays.length : 0;
-  const incomeStd   = earningDays.length > 1 ? Math.sqrt(earningDays.reduce((s, v) => s + Math.pow(v - incomeMean, 2), 0) / earningDays.length) : 0;
+  const earningDays = dailyEarned.filter((v) => v >= 10);
+  const incomeMean  =
+    earningDays.length > 0
+      ? earningDays.reduce((a, b) => a + b, 0) / earningDays.length
+      : 0;
+  const incomeStd =
+    earningDays.length > 1
+      ? Math.sqrt(
+          earningDays.reduce((s, v) => s + Math.pow(v - incomeMean, 2), 0) /
+            earningDays.length
+        )
+      : 0;
   const incomeCV    = incomeMean > 0 ? incomeStd / incomeMean : 0;
   const earnDaysPct = earningDays.length / days.length;
 
-  const endBals = days.map(d => { const dt = byDate[d]; return dt[dt.length - 1].balance || 0; });
+  const endBals = days.map((d) => {
+    const dt = byDate[d];
+    return dt[dt.length - 1].balance || 0;
+  });
   const balMean = endBals.reduce((a, b) => a + b, 0) / endBals.length;
-  const pctZero = endBals.filter(b => b <= 50).length / endBals.length;
+  const pctZero = endBals.filter((b) => b <= 50).length / endBals.length;
 
-  const fulizaTxns   = txns.filter(t => t.category === "fuliza_draw" || /fuliza/i.test(t.description || ""));
+  const fulizaTxns = txns.filter(
+    (t) => t.category === "fuliza_draw" || /fuliza/i.test(t.description || "")
+  );
   const fulizaPerDay = fulizaTxns.length / Math.max(days.length, 1);
 
   const totalEarned = earningDays.reduce((a, b) => a + b, 0);
-  const totalSpent  = txns.filter(t => t.amount < 0 && !DEBT_CATS.has(t.category)).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const totalSpent  = txns
+    .filter((t) => t.amount < 0 && !DEBT_CATS.has(t.category))
+    .reduce((s, t) => s + Math.abs(t.amount), 0);
   const spendRatio  = totalEarned > 0 ? totalSpent / totalEarned : 1.0;
-  const debtPayments = txns.filter(t => DEBT_CATS.has(t.category));
-  const debtScore   = totalSpent > 0 ? debtPayments.reduce((s, t) => s + Math.abs(t.amount), 0) / (totalSpent + 1) : 0;
 
-  const hasMshwari = txns.some(t => /mshwari/i.test(t.description || "")) ? 1 : 0;
-  const hasSacco   = txns.some(t => /sacco/i.test(t.description || "")) ? 1 : 0;
+  const debtPayments = txns.filter((t) => DEBT_CATS.has(t.category));
+  const debtScore    =
+    totalSpent > 0
+      ? debtPayments.reduce((s, t) => s + Math.abs(t.amount), 0) / (totalSpent + 1)
+      : 0;
+
+  const hasMshwari = txns.some((t) => /mshwari/i.test(t.description || "")) ? 1 : 0;
+  const hasSacco   = txns.some((t) => /sacco/i.test(t.description || "")) ? 1 : 0;
 
   const monthlyIncome = {};
-  txns.filter(t => t.amount > 0 && !LOAN_CATS.has(t.category)).forEach(t => {
-    const m = (t.date || "").slice(0, 7);
-    if (m) monthlyIncome[m] = (monthlyIncome[m] || 0) + t.amount;
-  });
+  txns
+    .filter((t) => t.amount > 0 && !LOAN_CATS.has(t.category))
+    .forEach((t) => {
+      const m = (t.date || "").slice(0, 7);
+      if (m) monthlyIncome[m] = (monthlyIncome[m] || 0) + t.amount;
+    });
   const monthVals = Object.values(monthlyIncome);
-  const monthMean = monthVals.length > 0 ? monthVals.reduce((a, b) => a + b, 0) / monthVals.length : 0;
-  const incomeSeas = monthMean > 0 && monthVals.length > 1
-    ? Math.sqrt(monthVals.reduce((s, v) => s + Math.pow(v - monthMean, 2), 0) / monthVals.length) / monthMean : 0;
+  const monthMean =
+    monthVals.length > 0
+      ? monthVals.reduce((a, b) => a + b, 0) / monthVals.length
+      : 0;
+  const incomeSeas =
+    monthMean > 0 && monthVals.length > 1
+      ? Math.sqrt(
+          monthVals.reduce((s, v) => s + Math.pow(v - monthMean, 2), 0) /
+            monthVals.length
+        ) / monthMean
+      : 0;
 
   const recent7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-  const recentEarned = manualTxns.filter(t => t.date >= recent7 && t.amount > 0 && t.category !== "digital_loan_received").reduce((s, t) => s + parseFloat(t.amount || 0), 0);
-  const recentSaved  = manualTxns.filter(t => t.date >= recent7 && t.category === "mshwari_deposit").reduce((s, t) => s + Math.abs(parseFloat(t.amount || 0)), 0);
-  const recentDays   = new Set(manualTxns.filter(t => t.date >= recent7).map(t => t.date)).size;
+  const recentEarned = manualTxns
+    .filter((t) => t.date >= recent7 && t.amount > 0 && t.category !== "digital_loan_received")
+    .reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+  const recentSaved = manualTxns
+    .filter((t) => t.date >= recent7 && t.category === "mshwari_deposit")
+    .reduce((s, t) => s + Math.abs(parseFloat(t.amount || 0)), 0);
+  const recentDays = new Set(
+    manualTxns.filter((t) => t.date >= recent7).map((t) => t.date)
+  ).size;
 
   return {
-    income_mean: Math.round(incomeMean), income_cv: parseFloat(incomeCV.toFixed(3)),
-    income_seasonality: parseFloat(incomeSeas.toFixed(3)), earn_days_pct: parseFloat(earnDaysPct.toFixed(3)),
-    bal_mean: Math.round(balMean), pct_zero_bal: parseFloat(pctZero.toFixed(3)),
-    spend_ratio: parseFloat(spendRatio.toFixed(3)), fuliza_per_day: parseFloat(fulizaPerDay.toFixed(2)),
-    debt_stack_score: parseFloat(debtScore.toFixed(3)), has_mshwari: hasMshwari, has_sacco: hasSacco,
-    total_earned: Math.round(totalEarned), total_spent: Math.round(totalSpent), n_days: days.length,
-    has_pdf: pdfTxns.length > 0 ? 1 : 0, manual_count: manualTxns.length,
-    recent_earned: Math.round(recentEarned), recent_saved: Math.round(recentSaved), recent_days: recentDays,
+    income_mean:        Math.round(incomeMean),
+    income_cv:          parseFloat(incomeCV.toFixed(3)),
+    income_seasonality: parseFloat(incomeSeas.toFixed(3)),
+    earn_days_pct:      parseFloat(earnDaysPct.toFixed(3)),
+    bal_mean:           Math.round(balMean),
+    pct_zero_bal:       parseFloat(pctZero.toFixed(3)),
+    spend_ratio:        parseFloat(spendRatio.toFixed(3)),
+    fuliza_per_day:     parseFloat(fulizaPerDay.toFixed(2)),
+    debt_stack_score:   parseFloat(debtScore.toFixed(3)),
+    has_mshwari:        hasMshwari,
+    has_sacco:          hasSacco,
+    total_earned:       Math.round(totalEarned),
+    total_spent:        Math.round(totalSpent),
+    n_days:             days.length,
+    has_pdf:            pdfTxns.length > 0 ? 1 : 0,
+    manual_count:       manualTxns.length,
+    recent_earned:      Math.round(recentEarned),
+    recent_saved:       Math.round(recentSaved),
+    recent_days:        recentDays,
   };
 }
 
@@ -344,41 +460,46 @@ function classifyTier(features, persona) {
     if (bal_mean > 3000)                              return { tier: "STABLE",   num: 4 };
     return { tier: "COPING", num: 3 };
   }
-  if (pct_zero_bal > 0.60 && (fuliza_per_day > 3.0 || debt_stack_score > 0.4)) return { tier: "CRISIS", num: 1 };
-  if (pct_zero_bal > 0.30 || fuliza_per_day > 2.0 || spend_ratio > 1.15 || debt_stack_score > 0.25) return { tier: "STRESSED", num: 2 };
-  if (pct_zero_bal < 0.08 && bal_mean > 3000 && earn_days_pct > 0.65 && spend_ratio < 0.85) return { tier: "STABLE", num: 4 };
+  if (pct_zero_bal > 0.60 && (fuliza_per_day > 3.0 || debt_stack_score > 0.4))
+    return { tier: "CRISIS", num: 1 };
+  if (pct_zero_bal > 0.30 || fuliza_per_day > 2.0 || spend_ratio > 1.15 || debt_stack_score > 0.25)
+    return { tier: "STRESSED", num: 2 };
+  if (pct_zero_bal < 0.08 && bal_mean > 3000 && earn_days_pct > 0.65 && spend_ratio < 0.85)
+    return { tier: "STABLE", num: 4 };
   return { tier: "COPING", num: 3 };
 }
 
 function getCoaching(persona, tierNum) {
-  return COACHING_DB[`${persona}_${tierNum}`] || {
-    en: "Focus on building a 30-day income buffer and reducing debt step by step.",
-    sw: "Zingatia kujenga akiba ya siku 30 na kupunguza madeni hatua kwa hatua.",
-  };
+  return (
+    COACHING_DB[`${persona}_${tierNum}`] || {
+      en: "Focus on building a 30-day income buffer and reducing debt step by step.",
+      sw: "Zingatia kujenga akiba ya siku 30 na kupunguza madeni hatua kwa hatua.",
+    }
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BUDGET FRAMEWORK
 // ═══════════════════════════════════════════════════════════════════════════
 const BUDGET_FRAMEWORK = {
-  CRISIS:   { needs: 90, savings: 5,  debt: 5,  wants: 0,  color: "#E53E3E", title: "Survival Budget · Bajeti ya Kuokoka", description: "Your spending exceeds your income. Every shilling counts.", descSw: "Matumizi yako yanazidi mapato. Kila shilingi ina maana.", savings_action: "Lock KES 50 in M-Shwari FIRST every day — before anything else.", savings_actionSw: "Funga KES 50 M-Shwari KWANZA kila siku.", debt_action: "Contact Tala/Branch to restructure. Do not take new loans.", debt_actionSw: "Wasiliana na Tala/Branch kupanga upya.", needs_action: "Cut one expense this week — airtime, eating out, or subscriptions.", needs_actionSw: "Kata gharama moja wiki hii." },
-  STRESSED: { needs: 70, savings: 10, debt: 15, wants: 5,  color: "#D69E2E", title: "Tight Budget · Bajeti Ngumu", description: "You are covering basics but one shock can break you.", descSw: "Unashughulikia mahitaji ya msingi lakini mshtuko mmoja unaweza kukuvunja.", savings_action: "Save KES 100/day in M-Shwari before any other spending.", savings_actionSw: "Weka KES 100/siku M-Shwari.", debt_action: "Pay highest-interest debt first. Fuliza daily = debt spiral.", debt_actionSw: "Lipa deni lenye riba nyingi zaidi kwanza.", needs_action: "Track your top 3 expenses this week.", needs_actionSw: "Fuatilia gharama zako 3 kubwa wiki hii." },
-  COPING:   { needs: 60, savings: 20, debt: 10, wants: 10, color: "#DD6B20", title: "Balanced Budget · Bajeti ya Usawa", description: "You are stable — now build resilience.", descSw: "Una utulivu — sasa jenga nguvu.", savings_action: "Target KES 200/day in M-Shwari. Register for SHA this month (KES 500/month).", savings_actionSw: "Lenga KES 200/siku M-Shwari. Jisajili SHA.", debt_action: "Reduce Fuliza to below 2 draws/day.", debt_actionSw: "Punguza Fuliza chini ya mara 2/siku.", needs_action: "Review rent — it should not exceed 25% of your income.", needs_actionSw: "Kagua kodi — haipaswi kuzidi 25% ya mapato yako." },
-  STABLE:   { needs: 50, savings: 25, debt: 5,  wants: 20, color: "#38A169", title: "Growth Budget · Bajeti ya Ukuaji", description: "You have a buffer — now grow it.", descSw: "Una akiba — sasa ikuze.", savings_action: "Diversify: M-Shwari for emergencies + Chama/SACCO for growth. Consider KNEST pension.", savings_actionSw: "Tofautisha: M-Shwari kwa dharura + Chama/SACCO kwa ukuaji.", debt_action: "No active debt? Use that 5% to invest — Hustler Fund builds credit to KES 50,000.", debt_actionSw: "Huna deni? Tumia asilimia 5 hiyo kuwekeza.", needs_action: "Needs under 50%? Excellent. Now invest surplus in income-generating skills.", needs_actionSw: "Mahitaji chini ya 50%? Vizuri. Sasa wekeza ziada." },
+  CRISIS:   { needs:90, savings:5,  debt:5,  wants:0,  color:"#E53E3E", title:"Survival Budget · Bajeti ya Kuokoka", description:"Your spending exceeds your income. Every shilling counts.", descSw:"Matumizi yako yanazidi mapato. Kila shilingi ina maana.", savings_action:"Lock KES 50 in M-Shwari FIRST every day.", savings_actionSw:"Funga KES 50 M-Shwari KWANZA kila siku.", debt_action:"Contact Tala/Branch to restructure. Do not take new loans.", debt_actionSw:"Wasiliana na Tala/Branch kupanga upya.", needs_action:"Cut one expense this week — airtime, eating out, or subscriptions.", needs_actionSw:"Kata gharama moja wiki hii." },
+  STRESSED: { needs:70, savings:10, debt:15, wants:5,  color:"#D69E2E", title:"Tight Budget · Bajeti Ngumu", description:"You are covering basics but one shock can break you.", descSw:"Unashughulikia mahitaji ya msingi lakini mshtuko mmoja unaweza kukuvunja.", savings_action:"Save KES 100/day in M-Shwari before any other spending.", savings_actionSw:"Weka KES 100/siku M-Shwari.", debt_action:"Pay highest-interest debt first. Fuliza daily = debt spiral.", debt_actionSw:"Lipa deni lenye riba nyingi zaidi kwanza.", needs_action:"Track your top 3 expenses this week.", needs_actionSw:"Fuatilia gharama zako 3 kubwa wiki hii." },
+  COPING:   { needs:60, savings:20, debt:10, wants:10, color:"#DD6B20", title:"Balanced Budget · Bajeti ya Usawa", description:"You are stable — now build resilience.", descSw:"Una utulivu — sasa jenga nguvu.", savings_action:"Target KES 200/day in M-Shwari. Register for SHA this month (KES 500/month).", savings_actionSw:"Lenga KES 200/siku M-Shwari. Jisajili SHA.", debt_action:"Reduce Fuliza to below 2 draws/day.", debt_actionSw:"Punguza Fuliza chini ya mara 2/siku.", needs_action:"Review rent — it should not exceed 25% of your income.", needs_actionSw:"Kagua kodi — haipaswi kuzidi 25% ya mapato yako." },
+  STABLE:   { needs:50, savings:25, debt:5,  wants:20, color:"#38A169", title:"Growth Budget · Bajeti ya Ukuaji", description:"You have a buffer — now grow it.", descSw:"Una akiba — sasa ikuze.", savings_action:"Diversify: M-Shwari for emergencies + Chama/SACCO for growth.", savings_actionSw:"Tofautisha: M-Shwari kwa dharura + Chama/SACCO kwa ukuaji.", debt_action:"No active debt? Use that 5% to invest — Hustler Fund builds credit to KES 50,000.", debt_actionSw:"Huna deni? Tumia asilimia 5 hiyo kuwekeza.", needs_action:"Needs under 50%? Invest surplus in income-generating skills.", needs_actionSw:"Mahitaji chini ya 50%? Wekeza ziada katika ujuzi." },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STYLES
 // ═══════════════════════════════════════════════════════════════════════════
 const S = {
-  app:      { minHeight: "100vh", background: "#0A1628", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#F0F4F8" },
-  card:     { background: "#0F1F35", borderRadius: 16, border: "1px solid #1E3A5F", padding: 24 },
-  input:    { width: "100%", background: "#0A1628", border: "1px solid #1E3A5F", borderRadius: 10, padding: "12px 16px", color: "#F0F4F8", fontSize: 15, outline: "none", boxSizing: "border-box" },
-  select:   { width: "100%", background: "#0A1628", border: "1px solid #1E3A5F", borderRadius: 10, padding: "12px 16px", color: "#F0F4F8", fontSize: 15, outline: "none", boxSizing: "border-box" },
-  btnGreen: { background: "linear-gradient(135deg,#00C875 0%,#00A35C 100%)", color: "#fff", border: "none", borderRadius: 10, padding: "14px 28px", fontSize: 15, fontWeight: 600, cursor: "pointer", width: "100%" },
-  btnOutline: { background: "transparent", color: "#00C875", border: "1px solid #00C875", borderRadius: 10, padding: "12px 24px", fontSize: 14, fontWeight: 600, cursor: "pointer" },
-  label:    { fontSize: 12, color: "#7A9CC0", marginBottom: 6, display: "block", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" },
-  tag:      { display: "inline-block", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600 },
+  app:       { minHeight:"100vh", background:"#0A1628", fontFamily:"'DM Sans','Segoe UI',sans-serif", color:"#F0F4F8" },
+  card:      { background:"#0F1F35", borderRadius:16, border:"1px solid #1E3A5F", padding:24 },
+  input:     { width:"100%", background:"#0A1628", border:"1px solid #1E3A5F", borderRadius:10, padding:"12px 16px", color:"#F0F4F8", fontSize:15, outline:"none", boxSizing:"border-box" },
+  select:    { width:"100%", background:"#0A1628", border:"1px solid #1E3A5F", borderRadius:10, padding:"12px 16px", color:"#F0F4F8", fontSize:15, outline:"none", boxSizing:"border-box" },
+  btnGreen:  { background:"linear-gradient(135deg,#00C875 0%,#00A35C 100%)", color:"#fff", border:"none", borderRadius:10, padding:"14px 28px", fontSize:15, fontWeight:600, cursor:"pointer", width:"100%" },
+  btnOutline:{ background:"transparent", color:"#00C875", border:"1px solid #00C875", borderRadius:10, padding:"12px 24px", fontSize:14, fontWeight:600, cursor:"pointer" },
+  label:     { fontSize:12, color:"#7A9CC0", marginBottom:6, display:"block", fontWeight:500, textTransform:"uppercase", letterSpacing:"0.05em" },
+  tag:       { display:"inline-block", padding:"4px 12px", borderRadius:20, fontSize:12, fontWeight:600 },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -395,12 +516,16 @@ function WelcomeScreen({ onLogin, onRegister }) {
       </div>
       <div style={{ width:"100%", maxWidth:400 }}>
         <div style={{ ...S.card, marginBottom:16, textAlign:"center" }}>
-          <p style={{ color:"#7A9CC0", marginBottom:20, fontSize:14 }}>Track your income, get personalised coaching, and build financial resilience — in English and Kiswahili.</p>
+          <p style={{ color:"#7A9CC0", marginBottom:20, fontSize:14 }}>
+            Track your income, get personalised coaching, and build financial resilience — in English and Kiswahili.
+          </p>
           <button style={S.btnGreen} onClick={onRegister}>Create Account · Fungua Akaunti</button>
-          <div style={{ marginTop:16 }}><button style={{ ...S.btnOutline, width:"100%" }} onClick={onLogin}>Sign In · Ingia</button></div>
+          <div style={{ marginTop:16 }}>
+            <button style={{ ...S.btnOutline, width:"100%" }} onClick={onLogin}>Sign In · Ingia</button>
+          </div>
         </div>
         <div style={{ display:"flex", gap:8, justifyContent:"center", flexWrap:"wrap" }}>
-          {["🔒 Secure","🇰🇪 Kenya-built","🌍 Bilingual","📊 AI-powered"].map(t => (
+          {["🔒 Secure","🇰🇪 Kenya-built","🌍 Bilingual","📊 AI-powered"].map((t) => (
             <span key={t} style={{ ...S.tag, background:"#0F1F35", color:"#7A9CC0", border:"1px solid #1E3A5F" }}>{t}</span>
           ))}
         </div>
@@ -435,11 +560,11 @@ function LoginScreen({ onSuccess, onBack }) {
         <div style={S.card}>
           <div style={{ marginBottom:16 }}>
             <label style={S.label}>Phone Number / Nambari ya Simu</label>
-            <input style={S.input} placeholder="07XX XXX XXX" value={phone} onChange={e => { setPhone(e.target.value); setError(""); }} onKeyDown={e => e.key === "Enter" && handleLogin()} />
+            <input style={S.input} placeholder="07XX XXX XXX" value={phone} onChange={(e) => { setPhone(e.target.value); setError(""); }} onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
           </div>
           <div style={{ marginBottom:20 }}>
             <label style={S.label}>Password / Nywila</label>
-            <input style={S.input} type="password" placeholder="Your password" value={password} onChange={e => { setPassword(e.target.value); setError(""); }} onKeyDown={e => e.key === "Enter" && handleLogin()} />
+            <input style={S.input} type="password" placeholder="Your password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }} onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
             {error && <p style={{ color:"#E53E3E", fontSize:13, marginTop:8 }}>{error}</p>}
           </div>
           <button style={{ ...S.btnGreen, opacity:loading ? 0.7 : 1 }} onClick={handleLogin} disabled={loading}>
@@ -455,17 +580,18 @@ function LoginScreen({ onSuccess, onBack }) {
 // REGISTER
 // ═══════════════════════════════════════════════════════════════════════════
 function RegisterScreen({ onSuccess, onBack }) {
-  const [step, setStep] = useState(1);
+  const [step, setStep]                 = useState(1);
   const [selectedGroup, setSelectedGroup] = useState(null);
-  const [error,   setError]   = useState("");
-  const [loading, setLoading] = useState(false);
+  const [error,   setError]             = useState("");
+  const [loading, setLoading]           = useState(false);
   const [form, setForm] = useState({
     phone:"", name:"", password:"", job_title:"", persona:"",
     is_married:false, n_kids:0, monthly_rent:0,
     savings_type:"none", borrowing_habit:"emergency_only", fuliza_attitude:"pragmatic",
-    has_sha:false, has_nssf:false, sends_remittance:false, remittance_amount:0, tithe_amount:0,
+    has_sha:false, has_nssf:false, sends_remittance:false,
+    remittance_amount:0, tithe_amount:0,
   });
-  const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const handleFinish = async () => {
     if (!form.phone.match(/^(?:254|\+254|0)?[17]\d{8}$/)) { setError("Invalid phone number / Nambari si sahihi"); return; }
@@ -474,7 +600,8 @@ function RegisterScreen({ onSuccess, onBack }) {
     setLoading(true); setError("");
     try { const user = await apiRegister(form); onSuccess(user); }
     catch (err) {
-      if (err.message?.includes("409") || err.message?.includes("registered")) setError("Phone already registered. Please sign in.");
+      if (err.message?.includes("409") || err.message?.includes("registered"))
+        setError("Phone already registered. Please sign in.");
       else setError(err.message || "Registration failed. Please try again.");
     } finally { setLoading(false); }
   };
@@ -498,15 +625,15 @@ function RegisterScreen({ onSuccess, onBack }) {
               <h3 style={{ marginBottom:24, color:"#F0F4F8" }}>Create your account</h3>
               <div style={{ marginBottom:16 }}>
                 <label style={S.label}>Full Name / Jina Lako</label>
-                <input style={S.input} placeholder="e.g. Wanjiku Kamau" value={form.name} onChange={e => update("name", e.target.value)} />
+                <input style={S.input} placeholder="e.g. Wanjiku Kamau" value={form.name} onChange={(e) => update("name", e.target.value)} />
               </div>
               <div style={{ marginBottom:16 }}>
                 <label style={S.label}>Phone Number (M-PESA) / Nambari ya Simu</label>
-                <input style={S.input} placeholder="07XX XXX XXX" value={form.phone} onChange={e => update("phone", e.target.value)} />
+                <input style={S.input} placeholder="07XX XXX XXX" value={form.phone} onChange={(e) => update("phone", e.target.value)} />
               </div>
               <div style={{ marginBottom:16 }}>
                 <label style={S.label}>Password / Nywila (min 6 characters)</label>
-                <input style={S.input} type="password" placeholder="Create a password" value={form.password} onChange={e => update("password", e.target.value)} />
+                <input style={S.input} type="password" placeholder="Create a password" value={form.password} onChange={(e) => update("password", e.target.value)} />
                 <p style={{ color:"#4A6A8A", fontSize:11, marginTop:4 }}>Remember this — you will need it to sign in</p>
               </div>
               <div style={{ marginBottom:24 }}>
@@ -535,7 +662,7 @@ function RegisterScreen({ onSuccess, onBack }) {
                         <button key={j} onClick={() => { update("job_title",job); update("persona",OCCUPATION_GROUPS[selectedGroup].persona); setSelectedGroup(null); }} style={{ background:"#0A1628", border:"1px solid #1E3A5F", borderRadius:8, padding:"10px 14px", textAlign:"left", cursor:"pointer", color:"#F0F4F8", fontSize:13 }}>{job}</button>
                       ))}
                       <input style={{ ...S.input, fontSize:13, marginTop:4 }} placeholder="My job is not listed / Kazi yangu haipo hapa..."
-                        onKeyDown={e => { if (e.key === "Enter" && e.target.value.trim()) { update("job_title",e.target.value.trim()); update("persona",OCCUPATION_GROUPS[selectedGroup].persona); setSelectedGroup(null); } }} />
+                        onKeyDown={(e) => { if (e.key==="Enter" && e.target.value.trim()) { update("job_title",e.target.value.trim()); update("persona",OCCUPATION_GROUPS[selectedGroup].persona); setSelectedGroup(null); }}} />
                     </div>
                   </div>
                 )}
@@ -550,20 +677,19 @@ function RegisterScreen({ onSuccess, onBack }) {
               <div style={{ marginBottom:16 }}>
                 <label style={S.label}>Marital Status</label>
                 <div style={{ display:"flex", gap:12 }}>
-                  {["Single","Married"].map(m => (
+                  {["Single","Married"].map((m) => (
                     <button key={m} onClick={() => update("is_married", m==="Married")} style={{ flex:1, padding:12, borderRadius:10, border:`2px solid ${form.is_married===(m==="Married")?"#00C875":"#1E3A5F"}`, background:form.is_married===(m==="Married")?"#003D20":"#0A1628", color:"#F0F4F8", cursor:"pointer" }}>{m}</button>
                   ))}
                 </div>
               </div>
               <div style={{ marginBottom:16 }}>
                 <label style={S.label}>Number of Children / Watoto · {form.n_kids}</label>
-                <input type="range" min={0} max={8} value={form.n_kids} onChange={e => update("n_kids",parseInt(e.target.value))} style={{ width:"100%", accentColor:"#00C875" }} />
+                <input type="range" min={0} max={8} value={form.n_kids} onChange={(e) => update("n_kids", parseInt(e.target.value))} style={{ width:"100%", accentColor:"#00C875" }} />
                 <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#4A6A8A", marginTop:4 }}><span>0</span><span>8</span></div>
               </div>
               <div style={{ marginBottom:24 }}>
                 <label style={S.label}>Monthly Rent (KES) / Kodi ya Mwezi</label>
-                <input style={S.input} type="number" placeholder="0 if rent-free" value={form.monthly_rent||""} onChange={e => update("monthly_rent",parseInt(e.target.value)||0)} />
-                <p style={{ color:"#4A6A8A", fontSize:12, marginTop:4 }}>Enter 0 if you live rent-free</p>
+                <input style={S.input} type="number" placeholder="0 if rent-free" value={form.monthly_rent || ""} onChange={(e) => update("monthly_rent", parseInt(e.target.value) || 0)} />
               </div>
               <div style={{ display:"flex", gap:12 }}>
                 <button style={{ ...S.btnOutline, flex:1 }} onClick={() => setStep(1)}>← Back</button>
@@ -576,26 +702,26 @@ function RegisterScreen({ onSuccess, onBack }) {
               <h3 style={{ marginBottom:24, color:"#F0F4F8" }}>Financial Profile · Hali ya Fedha</h3>
               <div style={{ marginBottom:16 }}>
                 <label style={S.label}>Savings Method / Jinsi Unavyoweka Akiba</label>
-                <select style={S.select} value={form.savings_type} onChange={e => update("savings_type",e.target.value)}>
-                  {SAVINGS_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                <select style={S.select} value={form.savings_type} onChange={(e) => update("savings_type", e.target.value)}>
+                  {SAVINGS_TYPES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </div>
               <div style={{ marginBottom:16 }}>
                 <label style={S.label}>Borrowing Habit / Tabia ya Kukopa</label>
-                <select style={S.select} value={form.borrowing_habit} onChange={e => update("borrowing_habit",e.target.value)}>
-                  {BORROW_HABITS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+                <select style={S.select} value={form.borrowing_habit} onChange={(e) => update("borrowing_habit", e.target.value)}>
+                  {BORROW_HABITS.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
                 </select>
               </div>
               <div style={{ marginBottom:16 }}>
                 <label style={S.label}>Your Fuliza Attitude / Mtazamo wa Fuliza</label>
-                <select style={S.select} value={form.fuliza_attitude} onChange={e => update("fuliza_attitude",e.target.value)}>
-                  {FULIZA_ATTITUDES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                <select style={S.select} value={form.fuliza_attitude} onChange={(e) => update("fuliza_attitude", e.target.value)}>
+                  {FULIZA_ATTITUDES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
               </div>
               <div style={{ marginBottom:24, display:"flex", gap:16 }}>
                 {[["SHA Health Cover","has_sha"],["NSSF Member","has_nssf"]].map(([label,key]) => (
-                  <button key={key} onClick={() => update(key,!form[key])} style={{ flex:1, padding:"12px", borderRadius:10, border:`2px solid ${form[key]?"#00C875":"#1E3A5F"}`, background:form[key]?"#003D20":"#0A1628", color:"#F0F4F8", cursor:"pointer", fontSize:13 }}>
-                    {form[key]?"✓ ":""}{label}
+                  <button key={key} onClick={() => update(key, !form[key])} style={{ flex:1, padding:"12px", borderRadius:10, border:`2px solid ${form[key]?"#00C875":"#1E3A5F"}`, background:form[key]?"#003D20":"#0A1628", color:"#F0F4F8", cursor:"pointer", fontSize:13 }}>
+                    {form[key] ? "✓ " : ""}{label}
                   </button>
                 ))}
               </div>
@@ -609,24 +735,24 @@ function RegisterScreen({ onSuccess, onBack }) {
             <div>
               <h3 style={{ marginBottom:24, color:"#F0F4F8" }}>Social Obligations · Majukumu ya Kijamii</h3>
               <div style={{ marginBottom:16 }}>
-                <button onClick={() => update("sends_remittance",!form.sends_remittance)} style={{ width:"100%", padding:"12px", borderRadius:10, border:`2px solid ${form.sends_remittance?"#00C875":"#1E3A5F"}`, background:form.sends_remittance?"#003D20":"#0A1628", color:"#F0F4F8", cursor:"pointer", textAlign:"left", fontSize:14 }}>
-                  {form.sends_remittance?"✓ ":""}Send money to rural family / Tuma pesa familia mashambani
+                <button onClick={() => update("sends_remittance", !form.sends_remittance)} style={{ width:"100%", padding:"12px", borderRadius:10, border:`2px solid ${form.sends_remittance?"#00C875":"#1E3A5F"}`, background:form.sends_remittance?"#003D20":"#0A1628", color:"#F0F4F8", cursor:"pointer", textAlign:"left", fontSize:14 }}>
+                  {form.sends_remittance ? "✓ " : ""}Send money to rural family / Tuma pesa familia mashambani
                 </button>
               </div>
               {form.sends_remittance && (
                 <div style={{ marginBottom:16 }}>
                   <label style={S.label}>Monthly remittance amount (KES)</label>
-                  <input style={S.input} type="number" placeholder="e.g. 1500" value={form.remittance_amount||""} onChange={e => update("remittance_amount",parseInt(e.target.value)||0)} />
+                  <input style={S.input} type="number" placeholder="e.g. 1500" value={form.remittance_amount || ""} onChange={(e) => update("remittance_amount", parseInt(e.target.value) || 0)} />
                 </div>
               )}
               <div style={{ marginBottom:24 }}>
                 <label style={S.label}>Weekly Church Tithe (KES) · Zaka ya Wiki</label>
-                <input style={S.input} type="number" placeholder="0 if none" value={form.tithe_amount||""} onChange={e => update("tithe_amount",parseInt(e.target.value)||0)} />
+                <input style={S.input} type="number" placeholder="0 if none" value={form.tithe_amount || ""} onChange={(e) => update("tithe_amount", parseInt(e.target.value) || 0)} />
               </div>
               {error && <p style={{ color:"#E53E3E", fontSize:13, marginBottom:12 }}>{error}</p>}
               <div style={{ display:"flex", gap:12 }}>
                 <button style={{ ...S.btnOutline, flex:1 }} onClick={() => setStep(3)}>← Back</button>
-                <button style={{ ...S.btnGreen, flex:2, opacity:loading?0.7:1 }} onClick={handleFinish} disabled={loading}>
+                <button style={{ ...S.btnGreen, flex:2, opacity:loading ? 0.7 : 1 }} onClick={handleFinish} disabled={loading}>
                   {loading ? "Creating account..." : "Create Account ✓"}
                 </button>
               </div>
@@ -647,7 +773,7 @@ function DailyField({ id, label, labelSw, value, onChange, color }) {
       <label htmlFor={id} style={S.label}>{label} <span style={{ color:"#4A6A8A", fontWeight:400 }}>· {labelSw}</span></label>
       <div style={{ position:"relative" }}>
         <span style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", color:"#7A9CC0", fontSize:14, fontWeight:600, pointerEvents:"none" }}>KES</span>
-        <input id={id} style={{ ...S.input, paddingLeft:48, borderColor:value&&value!=="0"?color:"#1E3A5F" }} type="number" inputMode="decimal" placeholder="0" value={value} onChange={e => onChange(e.target.value)} />
+        <input id={id} style={{ ...S.input, paddingLeft:48, borderColor: value && value !== "0" ? color : "#1E3A5F" }} type="number" inputMode="decimal" placeholder="0" value={value} onChange={(e) => onChange(e.target.value)} />
       </div>
     </div>
   );
@@ -681,16 +807,16 @@ function AddTransactionModal({ onSave, onClose }) {
     if (e===0&&s===0&&sv===0&&b===0) { setError("Enter at least one amount / Ingiza kiasi kimoja angalau"); return; }
     const base = Date.now();
     const txns = [];
-    if (e > 0)  txns.push({ id:base,   date, amount:e,   balance:0, category:earnFrom,                description:"Daily entry",    source:"manual" });
-    if (s > 0)  txns.push({ id:base+1, date, amount:-s,  balance:0, category:"daily_spending",        description:"Daily spending", source:"manual" });
+    if (e  > 0) txns.push({ id:base,   date, amount:e,   balance:0, category:earnFrom,                description:"Daily entry",    source:"manual" });
+    if (s  > 0) txns.push({ id:base+1, date, amount:-s,  balance:0, category:"daily_spending",        description:"Daily spending", source:"manual" });
     if (sv > 0) txns.push({ id:base+2, date, amount:-sv, balance:0, category:"mshwari_deposit",       description:"Saved today",    source:"manual" });
-    if (b > 0)  txns.push({ id:base+3, date, amount:b,   balance:0, category:"digital_loan_received", description:"Borrowed today", source:"manual" });
-    txns.forEach(t => onSave(t));
+    if (b  > 0) txns.push({ id:base+3, date, amount:b,   balance:0, category:"digital_loan_received", description:"Borrowed today", source:"manual" });
+    txns.forEach((t) => onSave(t));
     onClose();
   };
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"flex-end", zIndex:1000 }} onClick={e => { if (e.target===e.currentTarget) onClose(); }}>
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"flex-end", zIndex:1000 }} onClick={(e) => { if (e.target===e.currentTarget) onClose(); }}>
       <div style={{ width:"100%", maxWidth:480, margin:"0 auto", background:"#0F1F35", borderRadius:"20px 20px 0 0", padding:"24px 24px 32px", maxHeight:"90vh", overflowY:"auto" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
           <div>
@@ -701,14 +827,14 @@ function AddTransactionModal({ onSave, onClose }) {
         </div>
         <div style={{ marginBottom:16 }}>
           <label style={S.label}>Date / Tarehe</label>
-          <input style={S.input} type="date" value={date} onChange={e => setDate(e.target.value)} />
+          <input style={S.input} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
         <DailyField id="de" label="How much did you earn?" labelSw="Ulipata kiasi gani?" value={earned} onChange={setEarned} color="#00C87566" />
-        {parseFloat(earned)>0 && (
+        {parseFloat(earned) > 0 && (
           <div style={{ marginBottom:16, marginTop:-8 }}>
             <label style={S.label}>Main source / Chanzo kikuu cha mapato</label>
-            <select style={S.select} value={earnFrom} onChange={e => setEarnFrom(e.target.value)}>
-              {EARN_SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            <select style={S.select} value={earnFrom} onChange={(e) => setEarnFrom(e.target.value)}>
+              {EARN_SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </div>
         )}
@@ -729,19 +855,19 @@ function AddTransactionModal({ onSave, onClose }) {
 function BalanceSparkline({ transactions }) {
   if (!transactions || transactions.length === 0) return null;
   const byDate = {};
-  transactions.forEach(t => { const d=(t.date||"").slice(0,10); if (!d||d.length<10) return; if (!byDate[d]||t.balance>0) byDate[d]=t.balance; });
+  transactions.forEach((t) => { const d=(t.date||"").slice(0,10); if (!d||d.length<10) return; if (!byDate[d]||t.balance>0) byDate[d]=t.balance; });
   const days = Object.keys(byDate).sort().slice(-30);
   if (days.length < 3) return null;
-  const vals = days.map(d => byDate[d]||0);
+  const vals = days.map((d) => byDate[d] || 0);
   const max=Math.max(...vals,1), min=Math.min(...vals,0), range=max-min||1;
   const W=300, H=60, pad=4;
   const points = vals.map((v,i) => { const x=pad+(i/(vals.length-1))*(W-pad*2); const y=H-pad-((v-min)/range)*(H-pad*2); return `${x},${y}`; }).join(" ");
-  const hasNeg = vals.some(v=>v<0);
+  const hasNeg = vals.some((v) => v<0);
   const zeroY  = H-pad-((0-min)/range)*(H-pad*2);
   return (
     <div style={{ ...S.card, marginBottom:16 }}>
       <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
-        <div style={{ fontSize:11, color:"#4A6A8A", fontWeight:600 }}>BALANCE TREND · MWELEKEO WA SALIO (30 days)</div>
+        <div style={{ fontSize:11, color:"#4A6A8A", fontWeight:600 }}>BALANCE TREND (30 days)</div>
         <div style={{ fontSize:12, color:vals[vals.length-1]>=0?"#00C875":"#E53E3E", fontWeight:700 }}>KES {(vals[vals.length-1]||0).toLocaleString()}</div>
       </div>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow:"visible" }}>
@@ -771,6 +897,7 @@ function Dashboard({ user, transactions, onAddTxn, onViewLogs, onUpload, onBudge
     { label:"Fuliza / day",     labelSw:"Fuliza / siku",     value:features.fuliza_per_day.toFixed(1) },
   ] : [];
   const hasRecent = features && features.recent_days > 0;
+
   return (
     <div style={{ minHeight:"100vh", background:"#0A1628", padding:"0 0 80px" }}>
       <div style={{ background:"#0F1F35", borderBottom:"1px solid #1E3A5F", padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -779,7 +906,7 @@ function Dashboard({ user, transactions, onAddTxn, onViewLogs, onUpload, onBudge
           <div style={{ color:"#7A9CC0", fontSize:13 }}>Habari, {(user.name||"").split(" ")[0]}</div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <button onClick={() => setLang(l => l==="en"?"sw":"en")} style={{ ...S.tag, background:"#1E3A5F", color:"#7A9CC0", border:"none", cursor:"pointer" }}>{lang==="en"?"🇰🇪 SW":"🇬🇧 EN"}</button>
+          <button onClick={() => setLang((l) => l==="en"?"sw":"en")} style={{ ...S.tag, background:"#1E3A5F", color:"#7A9CC0", border:"none", cursor:"pointer" }}>{lang==="en"?"🇰🇪 SW":"🇬🇧 EN"}</button>
           <button onClick={onLogout} style={{ background:"none", border:"none", color:"#4A6A8A", cursor:"pointer", fontSize:13 }}>Sign out</button>
         </div>
       </div>
@@ -799,7 +926,7 @@ function Dashboard({ user, transactions, onAddTxn, onViewLogs, onUpload, onBudge
         </div>
         {features && (
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
-            {stats.map(s => (
+            {stats.map((s) => (
               <div key={s.label} style={S.card}>
                 <div style={{ fontSize:11, color:"#4A6A8A", marginBottom:4 }}>{lang==="en"?s.label:s.labelSw}</div>
                 <div style={{ fontSize:20, fontWeight:700, color:"#F0F4F8" }}>{s.value}</div>
@@ -814,7 +941,7 @@ function Dashboard({ user, transactions, onAddTxn, onViewLogs, onUpload, onBudge
               {[
                 { label:"Earned (7 days)", labelSw:"Mapato (siku 7)", value:`KES ${(features.recent_earned||0).toLocaleString()}` },
                 { label:"Saved (7 days)",  labelSw:"Akiba (siku 7)",  value:`KES ${(features.recent_saved||0).toLocaleString()}` },
-              ].map(s => (
+              ].map((s) => (
                 <div key={s.label} style={{ background:"#0A1628", borderRadius:8, padding:"10px 12px" }}>
                   <div style={{ fontSize:11, color:"#4A6A8A", marginBottom:4 }}>{lang==="en"?s.label:s.labelSw}</div>
                   <div style={{ fontSize:16, fontWeight:700, color:"#F0F4F8" }}>{s.value}</div>
@@ -847,7 +974,7 @@ function Dashboard({ user, transactions, onAddTxn, onViewLogs, onUpload, onBudge
         )}
         <div style={S.card}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-            <div style={{ fontWeight:600 }}>Recent Transactions · Miamala ya Hivi Karibuni</div>
+            <div style={{ fontWeight:600 }}>Recent Transactions</div>
             <button onClick={onViewLogs} style={{ background:"none", border:"none", color:"#00C875", cursor:"pointer", fontSize:13 }}>View all →</button>
           </div>
           {recentTxns.length===0 ? (
@@ -856,7 +983,7 @@ function Dashboard({ user, transactions, onAddTxn, onViewLogs, onUpload, onBudge
               <div style={{ fontSize:14 }}>No transactions yet · Bado hakuna miamala</div>
             </div>
           ) : (
-            recentTxns.map(t => (
+            recentTxns.map((t) => (
               <div key={t.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:"1px solid #1E3A5F" }}>
                 <div>
                   <div style={{ fontSize:13, marginBottom:2 }}>{(t.category||"").replace(/_/g," ")}</div>
@@ -884,18 +1011,18 @@ function TransactionLogs({ transactions, onBack, onDelete }) {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const filtered = transactions
-    .filter(t => filter==="all"||(filter==="income"?t.amount>0:t.amount<0))
-    .filter(t => !search||(t.category||"").includes(search)||(t.description||"").toLowerCase().includes(search.toLowerCase()))
+    .filter((t) => filter==="all"||(filter==="income"?t.amount>0:t.amount<0))
+    .filter((t) => !search||(t.category||"").includes(search)||(t.description||"").toLowerCase().includes(search.toLowerCase()))
     .sort((a,b) => new Date(b.date)-new Date(a.date));
-  const totalIn  = transactions.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
-  const totalOut = transactions.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
+  const totalIn  = transactions.filter((t)=>t.amount>0).reduce((s,t)=>s+t.amount,0);
+  const totalOut = transactions.filter((t)=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
   return (
     <div style={{ minHeight:"100vh", background:"#0A1628", paddingBottom:40 }}>
       <div style={{ background:"#0F1F35", borderBottom:"1px solid #1E3A5F", padding:"16px 20px", display:"flex", alignItems:"center", gap:16 }}>
         <button onClick={onBack} style={{ background:"none", border:"none", color:"#7A9CC0", cursor:"pointer", fontSize:18 }}>←</button>
         <div>
           <div style={{ fontWeight:600 }}>Transaction Log · Kumbukumbu ya Miamala</div>
-          <div style={{ fontSize:12, color:"#4A6A8A" }}>{transactions.length} total transactions</div>
+          <div style={{ fontSize:12, color:"#4A6A8A" }}>{transactions.length} total</div>
         </div>
       </div>
       <div style={{ padding:16, maxWidth:540, margin:"0 auto" }}>
@@ -907,9 +1034,9 @@ function TransactionLogs({ transactions, onBack, onDelete }) {
             </div>
           ))}
         </div>
-        <input style={{ ...S.input, marginBottom:10 }} placeholder="Search transactions..." value={search} onChange={e => setSearch(e.target.value)} />
+        <input style={{ ...S.input, marginBottom:10 }} placeholder="Search transactions..." value={search} onChange={(e) => setSearch(e.target.value)} />
         <div style={{ display:"flex", gap:8, marginBottom:16 }}>
-          {["all","income","expense"].map(f => (
+          {["all","income","expense"].map((f) => (
             <button key={f} onClick={() => setFilter(f)} style={{ ...S.tag, background:filter===f?"#00C875":"#1E3A5F", color:filter===f?"#000":"#7A9CC0", border:"none", cursor:"pointer", padding:"8px 16px" }}>
               {f.charAt(0).toUpperCase()+f.slice(1)}
             </button>
@@ -918,7 +1045,7 @@ function TransactionLogs({ transactions, onBack, onDelete }) {
         {filtered.length===0 ? (
           <div style={{ textAlign:"center", padding:40, color:"#4A6A8A" }}>No transactions found</div>
         ) : (
-          filtered.map(t => (
+          filtered.map((t) => (
             <div key={t.id} style={{ ...S.card, marginBottom:8, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:14, marginBottom:2 }}>{(t.category||"").replace(/_/g," ")}</div>
@@ -974,7 +1101,7 @@ function BudgetAdvisor({ user, transactions, features, tier, num, lang, onBack }
           <>
             <div style={{ ...S.card, marginBottom:16 }}>
               <div style={{ fontSize:12, color:"#7A9CC0", fontWeight:600, marginBottom:16 }}>RECOMMENDED DAILY ALLOCATION</div>
-              {allocations.map(a => (
+              {allocations.map((a) => (
                 <div key={a.label} style={{ marginBottom:16 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
                     <span style={{ fontSize:13, color:"#F0F4F8" }}>{a.label}</span>
@@ -988,7 +1115,7 @@ function BudgetAdvisor({ user, transactions, features, tier, num, lang, onBack }
               ))}
             </div>
             <div style={{ ...S.card, background:"#0A1628" }}>
-              <div style={{ fontSize:12, color:"#00C875", fontWeight:600, marginBottom:12 }}>KENYA MONEY TOOLS · ZANA ZA FEDHA ZA KENYA</div>
+              <div style={{ fontSize:12, color:"#00C875", fontWeight:600, marginBottom:12 }}>KENYA MONEY TOOLS</div>
               {[["M-Shwari","Free savings — no minimum balance, earns 7.35% p.a."],["Fuliza","Emergency credit — but costs 1.083%/day. Use sparingly."],["SACCO","Best long-term savings and loans. Rates from 12% p.a."],["Hustler Fund","Govt micro-loan — repay on time to grow limit to KES 50K"],["SHA","Health insurance — KES 500/month for whole household"]].map(([name,tip]) => (
                 <div key={name} style={{ display:"flex", gap:12, marginBottom:10 }}>
                   <div style={{ width:8, height:8, borderRadius:"50%", background:"#00C875", marginTop:5, flexShrink:0 }} />
@@ -1006,44 +1133,25 @@ function BudgetAdvisor({ user, transactions, features, tier, num, lang, onBack }
 // ═══════════════════════════════════════════════════════════════════════════
 // M-PESA PDF PARSER
 // ═══════════════════════════════════════════════════════════════════════════
-// Handles all known Safaricom statement formats after PDF.js text extraction.
-// Strategy: find lines containing a date AND at least 2 monetary amounts.
-// The last amount is the running balance; second-to-last is the transaction value.
-// Direction (in/out) determined by column position (3-amount rows) or keywords.
-
 function parseMpesaText(rawText) {
-  const txns = [];
+  const txns  = [];
+  const lines = rawText.split("\n").map((l) => l.replace(/\s{2,}/g," ").trim()).filter((l) => l.length > 0);
 
-  // ── Normalise: split into lines, strip whitespace ──────────────────────
-  const lines = rawText
-    .split("\n")
-    .map(l => l.replace(/\s{2,}/g, " ").trim())
-    .filter(l => l.length > 0);
-
-  // ── Patterns ──────────────────────────────────────────────────────────
   const DATE_RE   = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/;
   const AMOUNT_RE = /([\d,]+\.\d{2})/g;
   const RECEIPT_RE = /\b([A-Z]{2}[A-Z0-9]{8,14})\b/;
 
-  // Skip pure header / footer lines
   const isHeader = (line) =>
     /^(completion time|receipt no|transaction type|details|paid in|withdrawn|balance|status|safaricom|statement|date range|page \d|customer name|account number|dear|kindly|regards)/i.test(line);
 
-  // ── Row reconstruction ─────────────────────────────────────────────────
-  // PDF.js sometimes splits one table row across 2-3 text items/lines.
-  // We merge a line with the next 1-2 lines if it has a date but < 2 amounts.
-
   const getAmounts = (str) =>
-    [...str.matchAll(AMOUNT_RE)].map(m => parseFloat(m[1].replace(/,/g, ""))).filter(n => n >= 0);
+    [...str.matchAll(AMOUNT_RE)].map((m) => parseFloat(m[1].replace(/,/g,""))).filter((n) => n >= 0);
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (isHeader(line)) continue;
-
-    // Must contain a date somewhere
     if (!DATE_RE.test(line)) continue;
 
-    // Build candidate row: current line + up to 3 lookahead lines
     let candidate = line;
     let lookahead = 0;
     while (getAmounts(candidate).length < 2 && lookahead < 3 && i + 1 + lookahead < lines.length) {
@@ -1052,116 +1160,76 @@ function parseMpesaText(rawText) {
     }
     if (getAmounts(candidate).length < 2) continue;
 
-    // ── Extract date ─────────────────────────────────────────────────────
     const dm = candidate.match(DATE_RE);
     if (!dm) continue;
     const [, d, m, y] = dm;
-    const date = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    const date = `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
 
-    // ── Extract all amounts ───────────────────────────────────────────────
     const amounts = getAmounts(candidate);
     if (amounts.length < 2) continue;
 
-    // Running balance is always the LAST amount
     const balance = amounts[amounts.length - 1];
-
-    // ── Determine direction and transaction amount ────────────────────────
-    // Safaricom statements have 3 monetary columns: Paid In | Withdrawn | Balance
-    // When PDF.js captures all 3, amounts = [paidIn, withdrawn, balance]
-    // One of paidIn/withdrawn will be 0.00
     let amount;
     if (amounts.length >= 3) {
       const paidIn    = amounts[amounts.length - 3];
       const withdrawn = amounts[amounts.length - 2];
-      if (paidIn > 0 && withdrawn === 0) {
-        amount = paidIn;             // money came IN
-      } else if (withdrawn > 0 && paidIn === 0) {
-        amount = -withdrawn;         // money went OUT
-      } else if (paidIn > 0 && withdrawn > 0) {
-        // Both non-zero: use keyword fallback
+      if (paidIn > 0 && withdrawn === 0)      amount = paidIn;
+      else if (withdrawn > 0 && paidIn === 0) amount = -withdrawn;
+      else {
         const isOut = /paid to|buy goods|airtime|withdraw|transfer to|fuliza repay|loan repay|till|paybill|lipa na/i.test(candidate);
         amount = isOut ? -withdrawn : paidIn;
-      } else {
-        // Both zero (unlikely) — skip
-        continue;
       }
     } else {
-      // Only 2 amounts: rawAmt and balance
-      // Use keyword to decide direction
       const rawAmt = amounts[amounts.length - 2];
       const isOut  = /paid to|buy goods|airtime|withdraw|transfer to|fuliza repay|loan repay|till|paybill|lipa na mpesa/i.test(candidate);
       amount = isOut ? -rawAmt : rawAmt;
     }
-
     if (amount === 0) continue;
 
-    // ── Receipt number ───────────────────────────────────────────────────
     const receiptMatch = candidate.match(RECEIPT_RE);
     const receipt = receiptMatch ? receiptMatch[1] : `PDF${Date.now()}${i}`;
 
-    // ── Auto-categorise ───────────────────────────────────────────────────
     const desc = candidate.toLowerCase();
     let category = amount > 0 ? "business_revenue" : "daily_spending";
+    if      (/fuliza repay/i.test(desc))                       category = "fuliza_repayment";
+    else if (/fuliza|overdraft/i.test(desc) && amount > 0)     category = "fuliza_draw";
+    else if (/mshwari|m-shwari/i.test(desc))                   category = amount > 0 ? "mshwari_withdrawal" : "mshwari_deposit";
+    else if (/sacco/i.test(desc))                              category = amount > 0 ? "sacco_withdrawal" : "sacco_contribution";
+    else if (/airtime/i.test(desc))                            category = "airtime";
+    else if (/loan repay|repayment/i.test(desc))               category = "digital_loan_repayment";
+    else if (/loan|tala|branch|okoa/i.test(desc))              category = "digital_loan_received";
+    else if (/buy goods|till|lipa na mpesa|merchant/i.test(desc)) category = "inventory_restock";
+    else if (/paybill/i.test(desc))                            category = amount < 0 ? "utility_payment" : "business_revenue";
+    else if (/salary|wage/i.test(desc))                        category = "project_income";
+    else if (/customer.*transfer|received from/i.test(desc))   category = "business_revenue";
+    else if (/agent.*deposit|cash.*deposit/i.test(desc))       category = "cash_deposit";
+    else if (/withdraw|agent/i.test(desc))                     category = amount > 0 ? "cash_deposit" : "withdrawal";
+    else if (/fuel|petrol/i.test(desc))                        category = "fuel";
+    else if (/rent|landlord/i.test(desc))                      category = "rent";
 
-    if      (/fuliza repay|fuliza.*repay/i.test(desc))                  category = "fuliza_repayment";
-    else if (/fuliza|overdraft/i.test(desc) && amount > 0)              category = "fuliza_draw";
-    else if (/mshwari|m-shwari/i.test(desc))                            category = amount > 0 ? "mshwari_withdrawal" : "mshwari_deposit";
-    else if (/sacco/i.test(desc))                                       category = amount > 0 ? "sacco_withdrawal" : "sacco_contribution";
-    else if (/airtime/i.test(desc))                                     category = "airtime";
-    else if (/loan repay|repayment|tala.*repay|branch.*repay/i.test(desc)) category = "digital_loan_repayment";
-    else if (/loan.*received|tala|branch|okoa|fuliza received/i.test(desc)) category = "digital_loan_received";
-    else if (/buy goods|till|lipa na mpesa|merchant/i.test(desc))       category = "inventory_restock";
-    else if (/paybill/i.test(desc))                                     category = amount < 0 ? "utility_payment" : "business_revenue";
-    else if (/salary|wage|payroll/i.test(desc))                        category = "project_income";
-    else if (/customer.*transfer|received from|transfer from/i.test(desc)) category = "business_revenue";
-    else if (/agent.*deposit|cash.*deposit|deposited by/i.test(desc))  category = "cash_deposit";
-    else if (/withdraw|agent/i.test(desc))                             category = amount > 0 ? "cash_deposit" : "withdrawal";
-    else if (/fuel|petrol|petroleum/i.test(desc))                      category = "fuel";
-    else if (/rent|landlord/i.test(desc))                              category = "rent";
-    else if (/school fees|fee|tuition/i.test(desc))                    category = "school_fees";
-
-    txns.push({
-      id:          `${receipt}_${date}_${i}`,
-      date,
-      amount:      parseFloat(amount.toFixed(2)),
-      balance:     parseFloat(balance.toFixed(2)),
-      category,
-      description: candidate.slice(0, 100).trim(),
-      source:      "pdf",
-      receipt,
-    });
-
-    // Skip the lines we consumed via lookahead
+    txns.push({ id:`${receipt}_${date}_${i}`, date, amount:parseFloat(amount.toFixed(2)), balance:parseFloat(balance.toFixed(2)), category, description:candidate.slice(0,100).trim(), source:"pdf", receipt });
     i += lookahead;
   }
 
-  // ── Deduplicate by receipt + date ─────────────────────────────────────
   const seen = new Set();
-  return txns.filter(t => {
-    const key = `${t.receipt}_${t.date}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return txns.filter((t) => { const k=`${t.receipt}_${t.date}`; if (seen.has(k)) return false; seen.add(k); return true; });
 }
 
-// ── Extract text from all pages of a PDF.js pdf object ─────────────────
 async function extractPdfText(pdf) {
-  let fullText = "";
+  let text = "";
   for (let p = 1; p <= pdf.numPages; p++) {
     const page  = await pdf.getPage(p);
     const items = await page.getTextContent();
     let lastY   = null;
     for (const item of items.items) {
       const y = item.transform?.[5];
-      // New line when vertical position changes significantly
-      if (lastY !== null && Math.abs(y - lastY) > 3) fullText += "\n";
-      fullText += item.str + " ";
+      if (lastY !== null && Math.abs(y - lastY) > 3) text += "\n";
+      text += item.str + " ";
       lastY = y;
     }
-    fullText += "\n";
+    text += "\n";
   }
-  return fullText;
+  return text;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1169,88 +1237,48 @@ async function extractPdfText(pdf) {
 // ═══════════════════════════════════════════════════════════════════════════
 function UploadScreen({ onBack, onImport }) {
   const [stage,      setStage]      = useState("idle");
-  // stage: idle | reading | needs_password | wrong_password | parsing | preview | error
   const [file,       setFile]       = useState(null);
   const [parsedTxns, setParsedTxns] = useState([]);
   const [parseError, setParseError] = useState("");
   const [password,   setPassword]   = useState("");
   const [pwdError,   setPwdError]   = useState("");
 
-  // ── STEP 1: User selects a file ──────────────────────────────────────────
   const handleFile = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
-
-    // Reset state
-    setFile(f);
-    setParseError("");
-    setPwdError("");
-    setPassword("");
-    setParsedTxns([]);
-    setStage("reading");
-
+    setFile(f); setParseError(""); setPwdError(""); setPassword(""); setParsedTxns([]); setStage("reading");
     try {
       const arrayBuffer = await f.arrayBuffer();
-
-      // Quick sanity check: is this actually a PDF?
-      const header = new Uint8Array(arrayBuffer.slice(0, 5));
-      const headerStr = String.fromCharCode(...header);
-      if (!headerStr.startsWith("%PDF")) {
+      const header = new Uint8Array(arrayBuffer.slice(0,5));
+      if (!String.fromCharCode(...header).startsWith("%PDF")) {
         setParseError("This does not look like a PDF file. Please upload your M-PESA statement PDF.");
-        setStage("error");
-        return;
+        setStage("error"); return;
       }
-
-      // ── Detect encryption WITHOUT loading pdf.js ──────────────────────
-      // Scan raw bytes for /Encrypt dictionary marker
-      const rawText = new TextDecoder("latin1").decode(arrayBuffer);
+      const rawText    = new TextDecoder("latin1").decode(arrayBuffer);
       const isEncrypted = /\/Encrypt[\s\n\r]/.test(rawText);
-
       if (isEncrypted) {
-        // Don't ask for password immediately — try with empty string first
-        // (some "protected" PDFs open without a password in practice)
         const pdfjs = await loadPdfJs();
-        let openedWithoutPwd = false;
+        let opened = false;
         try {
-          const task = pdfjs.getDocument({ data: arrayBuffer.slice(0), password: "" });
-          const pdf  = await task.promise;
-          openedWithoutPwd = true;
+          const pdf = await pdfjs.getDocument({ data: arrayBuffer.slice(0), password:"" }).promise;
+          opened = true;
           setStage("parsing");
           const text = await extractPdfText(pdf);
           const txns = parseMpesaText(text);
           if (txns.length > 0) { setParsedTxns(txns); setStage("preview"); }
           else { setParseError("PDF opened but no transactions found. Make sure this is a Safaricom M-PESA statement."); setStage("error"); }
-        } catch (_) {
-          if (!openedWithoutPwd) {
-            // Genuinely needs a password — now ask
-            setStage("needs_password");
-          }
-        }
+        } catch (_) { if (!opened) setStage("needs_password"); }
         return;
       }
-
-      // ── Unprotected PDF — parse directly ─────────────────────────────
       setStage("parsing");
       const pdfjs = await loadPdfJs();
-
       const task  = pdfjs.getDocument({ data: arrayBuffer });
-      // onPassword fires if the file turns out to be protected despite no /Encrypt marker
-      task.onPassword = () => { setStage("needs_password"); };
-
+      task.onPassword = () => setStage("needs_password");
       const pdf  = await task.promise;
       const text = await extractPdfText(pdf);
       const txns = parseMpesaText(text);
-
-      if (txns.length > 0) {
-        setParsedTxns(txns);
-        setStage("preview");
-      } else {
-        setParseError(
-          "No transactions found in this PDF. Make sure you are uploading a Safaricom M-PESA statement " +
-          "(dial *334# → My Account → Statement). The statement must cover at least 1 month."
-        );
-        setStage("error");
-      }
+      if (txns.length > 0) { setParsedTxns(txns); setStage("preview"); }
+      else { setParseError("No transactions found in this PDF. Make sure you are uploading a Safaricom M-PESA statement (dial *334# → My Account → Statement). The statement must cover at least 1 month."); setStage("error"); }
     } catch (err) {
       console.error("PDF read error:", err);
       setParseError("Could not read this PDF. Please try downloading a fresh copy of your statement.");
@@ -1258,58 +1286,26 @@ function UploadScreen({ onBack, onImport }) {
     }
   };
 
-  // ── STEP 2: User enters password (only if file is actually protected) ──
   const handlePasswordSubmit = async () => {
     if (!password.trim()) { setPwdError("Please enter the password / Tafadhali ingiza nenosiri"); return; }
-    if (!file) { setPwdError("No file selected. Please go back and select a file."); return; }
-
-    setPwdError("");
-    setStage("parsing");
-
+    if (!file) { setPwdError("No file. Please go back and select a file again."); return; }
+    setPwdError(""); setStage("parsing");
     try {
       const arrayBuffer = await file.arrayBuffer();
       const pdfjs       = await loadPdfJs();
-
-      let wrongPassword = false;
-
+      let wrongPwd = false;
       const task = pdfjs.getDocument({ data: arrayBuffer, password: password.trim() });
-      task.onPassword = (updatePwd, reason) => {
-        // reason 1 = first prompt, reason 2 = wrong password
-        if (reason === 2) {
-          wrongPassword = true;
-          setStage("wrong_password");
-          setPwdError("Incorrect password. Please try again. / Nenosiri si sahihi. Jaribu tena.");
-        }
-      };
-
+      task.onPassword = (_, reason) => { if (reason === 2) { wrongPwd = true; setStage("wrong_password"); setPwdError("Incorrect password. Try again. / Nenosiri si sahihi. Jaribu tena."); } };
       const pdf  = await task.promise;
-      if (wrongPassword) return; // onPassword already updated state
-
+      if (wrongPwd) return;
       const text = await extractPdfText(pdf);
       const txns = parseMpesaText(text);
-
-      if (txns.length > 0) {
-        setParsedTxns(txns);
-        setStage("preview");
-        setPassword("");
-      } else {
-        setStage("needs_password");
-        setPwdError(
-          "Unlocked successfully but no transactions found. " +
-          "Make sure this is a Safaricom M-PESA statement."
-        );
-      }
+      if (txns.length > 0) { setParsedTxns(txns); setStage("preview"); setPassword(""); }
+      else { setStage("needs_password"); setPwdError("Unlocked but no transactions found. Make sure this is a Safaricom M-PESA statement."); }
     } catch (err) {
-      console.error("Password open error:", err);
-      // If pdf.js throws with a password-related message, show wrong password
       const msg = (err.message || "").toLowerCase();
-      if (msg.includes("password") || msg.includes("incorrect")) {
-        setStage("wrong_password");
-        setPwdError("Incorrect password. Please try again. / Nenosiri si sahihi. Jaribu tena.");
-      } else {
-        setStage("error");
-        setParseError("Could not open the PDF. Please try a fresh copy of your statement.");
-      }
+      if (msg.includes("password") || msg.includes("incorrect")) { setStage("wrong_password"); setPwdError("Incorrect password. Try again."); }
+      else { setStage("error"); setParseError("Could not open the PDF. Please try a fresh copy."); }
     }
   };
 
@@ -1322,36 +1318,24 @@ function UploadScreen({ onBack, onImport }) {
           <div style={{ fontSize:12, color:"#4A6A8A" }}>Ingiza taarifa yako ya M-PESA</div>
         </div>
       </div>
-
       <div style={{ padding:20, maxWidth:480, margin:"0 auto" }}>
-
-        {/* ── IDLE / ERROR: file picker ─────────────────────────────────── */}
-        {(stage === "idle" || stage === "reading" || stage === "error") && (
+        {(stage==="idle"||stage==="reading"||stage==="error") && (
           <div>
             <div style={S.card}>
               <div style={{ fontSize:13, color:"#7A9CC0", lineHeight:1.6, marginBottom:20 }}>
-                Upload your Safaricom M-PESA statement PDF.
-                If it is password protected, you will only be asked for the password <strong style={{ color:"#F0F4F8" }}>if the file actually needs one</strong> — not before.
+                Upload your Safaricom M-PESA statement PDF. You will only be asked for a password <strong style={{ color:"#F0F4F8" }}>if the file actually needs one</strong>.
                 <br /><br />
-                <span style={{ color:"#4A6A8A" }}>Pakia PDF ya taarifa yako ya M-PESA. Kama ina nenosiri, tutakuomba uingize nenosiri tu kama faili linahitaji hivyo.</span>
+                <span style={{ color:"#4A6A8A" }}>Pakia PDF ya taarifa yako ya M-PESA. Utaulizwa nenosiri tu kama faili linahitaji hivyo.</span>
               </div>
-              <label
-                style={{ display:"block", border:"2px dashed #1E3A5F", borderRadius:12, padding:"32px 20px", textAlign:"center", cursor:"pointer" }}
-                onMouseEnter={e => e.currentTarget.style.borderColor="#00C875"}
-                onMouseLeave={e => e.currentTarget.style.borderColor="#1E3A5F"}
-              >
+              <label style={{ display:"block", border:"2px dashed #1E3A5F", borderRadius:12, padding:"32px 20px", textAlign:"center", cursor:"pointer" }}
+                onMouseEnter={(e)=>e.currentTarget.style.borderColor="#00C875"} onMouseLeave={(e)=>e.currentTarget.style.borderColor="#1E3A5F"}>
                 <input type="file" accept=".pdf" onChange={handleFile} style={{ display:"none" }} />
                 <div style={{ fontSize:36, marginBottom:12 }}>{stage==="reading"?"⏳":"📄"}</div>
-                <div style={{ color:"#F0F4F8", fontWeight:600, marginBottom:4 }}>
-                  {stage==="reading" ? "Reading file..." : (file ? `${file.name} — tap to change` : "Tap to select PDF")}
-                </div>
+                <div style={{ color:"#F0F4F8", fontWeight:600, marginBottom:4 }}>{stage==="reading"?"Reading file...":(file?`${file.name} — tap to change`:"Tap to select PDF")}</div>
                 <div style={{ color:"#4A6A8A", fontSize:13 }}>M-PESA statement (.pdf)</div>
               </label>
-              {stage==="error" && parseError && (
-                <div style={{ marginTop:16, padding:"12px 16px", background:"#3D0000", borderRadius:10, color:"#E53E3E", fontSize:13, lineHeight:1.5 }}>{parseError}</div>
-              )}
+              {stage==="error" && parseError && <div style={{ marginTop:16, padding:"12px 16px", background:"#3D0000", borderRadius:10, color:"#E53E3E", fontSize:13, lineHeight:1.5 }}>{parseError}</div>}
             </div>
-
             <div style={{ ...S.card, background:"#0A1628", border:"1px solid #1E3A5F", marginTop:16 }}>
               <div style={{ fontSize:12, color:"#00C875", fontWeight:600, marginBottom:10 }}>How to get your M-PESA statement</div>
               {[["1","Dial *334#","Piga *334#"],["2","Select My Account → Statement","Chagua Akaunti Yangu → Taarifa"],["3","Choose date range (max 6 months)","Chagua kipindi (miezi 6 max)"],["4","Statement sent to your email","Taarifa inatumwa kwa barua pepe"]].map(([n,en,sw]) => (
@@ -1363,66 +1347,38 @@ function UploadScreen({ onBack, onImport }) {
             </div>
           </div>
         )}
-
-        {/* ── PASSWORD PROMPT (only shown when file is actually encrypted) ── */}
-        {(stage === "needs_password" || stage === "wrong_password") && (
+        {(stage==="needs_password"||stage==="wrong_password") && (
           <div style={S.card}>
             <div style={{ textAlign:"center", marginBottom:24 }}>
               <div style={{ fontSize:40, marginBottom:12 }}>🔒</div>
-              <div style={{ fontWeight:600, color:"#F0F4F8", fontSize:18, marginBottom:8 }}>
-                {stage==="wrong_password" ? "Incorrect password — try again" : "This statement is password protected"}
-              </div>
-              <div style={{ color:"#7A9CC0", fontSize:13, lineHeight:1.6 }}>
-                Enter the password from the email Safaricom sent you with this statement.
-                <br /><span style={{ color:"#4A6A8A" }}>Kawaida nenosiri ni nambari yako ya kitambulisho (ID) au nambari ya simu yako.</span>
-              </div>
+              <div style={{ fontWeight:600, color:"#F0F4F8", fontSize:18, marginBottom:8 }}>{stage==="wrong_password"?"Incorrect password — try again":"This statement is password protected"}</div>
+              <div style={{ color:"#7A9CC0", fontSize:13, lineHeight:1.6 }}>Enter the password from the Safaricom email.<br /><span style={{ color:"#4A6A8A" }}>Ingiza nenosiri kutoka barua pepe ya Safaricom. Kawaida ni nambari yako ya kitambulisho au ya simu.</span></div>
             </div>
             <div style={{ marginBottom:8 }}>
               <label style={S.label}>Password / Nenosiri</label>
-              <input
-                style={{ ...S.input, fontSize:17, letterSpacing:"0.08em",
-                         borderColor: stage==="wrong_password" ? "#E53E3E" : "#1E3A5F" }}
-                type="password"
-                placeholder="Enter PDF password"
-                value={password}
-                autoFocus
-                onChange={e => { setPassword(e.target.value); setPwdError(""); }}
-                onKeyDown={e => e.key==="Enter" && handlePasswordSubmit()}
-              />
+              <input style={{ ...S.input, fontSize:17, letterSpacing:"0.08em", borderColor:stage==="wrong_password"?"#E53E3E":"#1E3A5F" }} type="password" placeholder="Enter PDF password" value={password} autoFocus onChange={(e) => { setPassword(e.target.value); setPwdError(""); }} onKeyDown={(e) => e.key==="Enter" && handlePasswordSubmit()} />
               {pwdError && <p style={{ color:"#E53E3E", fontSize:12, marginTop:8, lineHeight:1.5 }}>{pwdError}</p>}
             </div>
-            <p style={{ color:"#4A6A8A", fontSize:12, marginBottom:20, lineHeight:1.5 }}>
-              We never store your password. It is used only to unlock this file locally in your browser.<br />
-              <span style={{ color:"#2A4A3A" }}>Hatuhifadhi nenosiri lako. Inatumika kufungua faili tu kwenye kivinjari chako.</span>
-            </p>
+            <p style={{ color:"#4A6A8A", fontSize:12, marginBottom:20, lineHeight:1.5 }}>We never store your password. It is used only to unlock this file in your browser.<br /><span style={{ color:"#2A4A3A" }}>Hatuhifadhi nenosiri lako.</span></p>
             <div style={{ display:"flex", gap:12 }}>
               <button style={{ ...S.btnOutline, flex:1 }} onClick={() => { setStage("idle"); setPassword(""); setPwdError(""); }}>← Try different file</button>
               <button style={{ ...S.btnGreen, flex:2 }} onClick={handlePasswordSubmit}>Unlock · Fungua</button>
             </div>
           </div>
         )}
-
-        {/* ── PARSING SPINNER ───────────────────────────────────────────── */}
-        {stage === "parsing" && (
+        {stage==="parsing" && (
           <div style={{ ...S.card, textAlign:"center", padding:48 }}>
-            <div style={{ fontSize:40, marginBottom:16, animation:"spin 1s linear infinite", display:"inline-block" }}>⟳</div>
+            <div style={{ fontSize:40, marginBottom:16 }}>⟳</div>
             <div style={{ color:"#F0F4F8", fontWeight:600 }}>Reading your transactions...</div>
             <div style={{ color:"#4A6A8A", fontSize:13, marginTop:8 }}>Inasoma miamala yako...</div>
           </div>
         )}
-
-        {/* ── PREVIEW ───────────────────────────────────────────────────── */}
-        {stage === "preview" && parsedTxns.length > 0 && (
+        {stage==="preview" && parsedTxns.length > 0 && (
           <div>
             <div style={{ ...S.card, marginBottom:16 }}>
-              <div style={{ fontSize:13, color:"#00C875", fontWeight:600, marginBottom:16 }}>
-                ✅ {parsedTxns.length} transactions found · Miamala {parsedTxns.length} imepatikana
-              </div>
+              <div style={{ fontSize:13, color:"#00C875", fontWeight:600, marginBottom:16 }}>✅ {parsedTxns.length} transactions found · Miamala {parsedTxns.length} imepatikana</div>
               <div style={{ display:"flex", gap:10, marginBottom:16 }}>
-                {[
-                  { label:"Income",   value:`KES ${parsedTxns.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0).toLocaleString()}`,  color:"#00C875" },
-                  { label:"Expenses", value:`KES ${parsedTxns.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0).toLocaleString()}`, color:"#E53E3E" },
-                ].map(s => (
+                {[{label:"Income",value:`KES ${parsedTxns.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0).toLocaleString()}`,color:"#00C875"},{label:"Expenses",value:`KES ${parsedTxns.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0).toLocaleString()}`,color:"#E53E3E"}].map(s=>(
                   <div key={s.label} style={{ flex:1, background:"#0A1628", borderRadius:10, padding:"10px 12px" }}>
                     <div style={{ fontSize:11, color:"#4A6A8A" }}>{s.label}</div>
                     <div style={{ fontSize:12, fontWeight:700, color:s.color, marginTop:2 }}>{s.value}</div>
@@ -1430,7 +1386,7 @@ function UploadScreen({ onBack, onImport }) {
                 ))}
               </div>
               <div style={{ fontSize:12, color:"#4A6A8A", marginBottom:8 }}>Preview (first 5)</div>
-              {parsedTxns.slice(0,5).map(t => (
+              {parsedTxns.slice(0,5).map(t=>(
                 <div key={t.id} style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:"1px solid #1E3A5F", fontSize:13 }}>
                   <div>
                     <div style={{ color:"#F0F4F8" }}>{(t.category||"").replace(/_/g," ")}</div>
@@ -1439,14 +1395,10 @@ function UploadScreen({ onBack, onImport }) {
                   <div style={{ fontWeight:600, color:t.amount>0?"#00C875":"#E53E3E" }}>{t.amount>0?"+":""}KES {Math.abs(t.amount).toLocaleString()}</div>
                 </div>
               ))}
-              {parsedTxns.length>5 && <div style={{ color:"#4A6A8A", fontSize:12, textAlign:"center", marginTop:10 }}>+{parsedTxns.length-5} more transactions</div>}
+              {parsedTxns.length>5&&<div style={{ color:"#4A6A8A", fontSize:12, textAlign:"center", marginTop:10 }}>+{parsedTxns.length-5} more transactions</div>}
             </div>
-            <button style={S.btnGreen} onClick={() => onImport(parsedTxns)}>
-              Import {parsedTxns.length} Transactions · Ingiza Miamala
-            </button>
-            <button style={{ ...S.btnOutline, width:"100%", marginTop:10 }} onClick={() => { setStage("idle"); setParsedTxns([]); setFile(null); }}>
-              Cancel · Ghairi
-            </button>
+            <button style={S.btnGreen} onClick={() => onImport(parsedTxns)}>Import {parsedTxns.length} Transactions · Ingiza Miamala</button>
+            <button style={{ ...S.btnOutline, width:"100%", marginTop:10 }} onClick={() => { setStage("idle"); setParsedTxns([]); setFile(null); }}>Cancel · Ghairi</button>
           </div>
         )}
       </div>
@@ -1455,26 +1407,26 @@ function UploadScreen({ onBack, onImport }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MAIN APP
+// MAIN APP — default export for Vite/React bundled deployment
 // ═══════════════════════════════════════════════════════════════════════════
-function InFoachApp() {
+export default function InFoachApp() {
   const [screen,       setScreen]       = useState("welcome");
   const [currentUser,  setCurrentUser]  = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [showAddTxn,   setShowAddTxn]   = useState(false);
-  const [budgetLang,   setBudgetLang]   = useState("en");
+  const [budgetLang]                    = useState("en");
 
   useEffect(() => {
     wakeUpAPI();
     if (_authToken) {
       try {
-        const keys = Object.keys(localStorage).filter(k => k.startsWith("infoach:user:"));
+        const keys = Object.keys(localStorage).filter((k) => k.startsWith("infoach:user:"));
         if (keys.length > 0) {
           const stored = JSON.parse(localStorage.getItem(keys[0]));
           if (stored) {
             setCurrentUser(stored);
             setScreen("dashboard");
-            apiLoadTxns().then(txns => { if (Array.isArray(txns)) setTransactions(txns); });
+            apiLoadTxns().then((txns) => { if (Array.isArray(txns)) setTransactions(txns); });
           }
         }
       } catch (_) {}
@@ -1484,7 +1436,7 @@ function InFoachApp() {
   const handleAuthSuccess = (user) => {
     setCurrentUser(user);
     setScreen("dashboard");
-    apiLoadTxns().then(txns => { if (Array.isArray(txns)) setTransactions(txns); });
+    apiLoadTxns().then((txns) => { if (Array.isArray(txns)) setTransactions(txns); });
   };
 
   const handleAddTxn = (txn) => {
@@ -1495,7 +1447,7 @@ function InFoachApp() {
   };
 
   const handleDeleteTxn = (id) => {
-    setTransactions(prev => prev.filter(t => String(t.id) !== String(id)));
+    setTransactions((prev) => prev.filter((t) => String(t.id) !== String(id)));
     apiDeleteTxn(id);
   };
 
@@ -1518,7 +1470,7 @@ function InFoachApp() {
     <UploadScreen
       onBack={() => setScreen("dashboard")}
       onImport={(txns) => {
-        const manual   = transactions.filter(t => !t.receipt);
+        const manual   = transactions.filter((t) => !t.receipt);
         const combined = [...manual, ...txns];
         setTransactions(combined);
         apiSaveTxns(combined);
@@ -1544,8 +1496,3 @@ function InFoachApp() {
     </div>
   );
 }
-
-// ── Mount ─────────────────────────────────────────────────────────────────
-ReactDOM.createRoot(document.getElementById("root")).render(
-  React.createElement(InFoachApp)
-);
