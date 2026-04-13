@@ -1,5 +1,25 @@
 import { useState, useEffect } from "react";
 
+
+// ── PDF.js for M-PESA statement parsing ──────────────────────────────────
+// Loaded dynamically to keep bundle size small
+let pdfjsLib = null;
+async function loadPdfJs() {
+  if (pdfjsLib) return pdfjsLib;
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    script.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      pdfjsLib = window.pdfjsLib;
+      resolve(pdfjsLib);
+    };
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // CONFIG — ONE place to change the API URL
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1332,116 +1352,135 @@ function UploadScreen({ onBack, onImport }) {
   const [password,    setPassword]    = useState("");
   const [pwdError,    setPwdError]    = useState("");
 
-  // Parse text extracted from PDF into transaction rows
   const parseStatementText = (text) => {
-    const lines = text.split("\n");
-    const txns  = [];
-    // Safaricom M-PESA statement pattern:
-    // date | receipt | description | paid_in | paid_out | balance
-    const dateRe    = /\d{1,2}\/\d{1,2}\/\d{4}/;
-    const receiptRe = /[A-Z0-9]{10,}/;
-    const amountRe  = /[\d,]+\.\d{2}/g;
+  const txns = [];
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
-    for (const line of lines) {
-      if (!dateRe.test(line)) continue;
-      const dateMatch = line.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (!dateMatch) continue;
-      const [, d, m, y] = dateMatch;
-      const date = `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+  // Safaricom M-PESA statement line format after pdf.js extraction:
+  // "DD/MM/YYYY  RECEIPT_NO  Description  Amount  Balance"
+  // or tokens may be on separate lines — we join by date anchor
+  const dateRe = /^(\d{1,2}\/\d{1,2}\/\d{4})/;
 
-      const amounts = [...(line.matchAll(/[\d,]+\.\d{2}/g))].map(a => parseFloat(a[0].replace(/,/g,"")));
-      if (amounts.length < 2) continue;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!dateRe.test(line)) continue;
 
-      const receiptMatch = line.match(/[A-Z]{2}[A-Z0-9]{8,}/);
-      const receipt = receiptMatch ? receiptMatch[0] : `STMT${Date.now()}${txns.length}`;
+    // Merge next few lines into this one to catch split entries
+    const combined = [line, lines[i+1] || "", lines[i+2] || ""].join(" ").trim();
 
-      // Last amount = balance, second-to-last = transaction amount
-      const balance = amounts[amounts.length - 1];
-      const rawAmt  = amounts[amounts.length - 2];
-      if (!rawAmt) continue;
+    const dateMatch = combined.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (!dateMatch) continue;
+    const [, d, m, y] = dateMatch;
+    const date = `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
 
-      // Determine sign: if paid_out column has value, it's negative
-      const paidOutIdx = amounts.length - 2;
-      const paidInIdx  = amounts.length - 3;
-      const desc = line.toLowerCase();
-      const isOut = /paid to|buy goods|airtime|withdraw|transfer to|fuliza repay|loan repay/i.test(line);
-      const amount = isOut ? -rawAmt : rawAmt;
+    // Extract all decimal amounts from the combined line
+    const amounts = [...combined.matchAll(/([\d,]+\.\d{2})/g)]
+      .map(a => parseFloat(a[1].replace(/,/g, "")))
+      .filter(n => n > 0);
 
-      // Auto-categorise
-      let category = "other";
-      if (/fuliza repay/i.test(desc))           category = "fuliza_repayment";
-      else if (/fuliza/i.test(desc))            category = "fuliza_draw";
-      else if (/mshwari|m-shwari/i.test(desc)) category = amount > 0 ? "mshwari_withdrawal" : "mshwari_deposit";
-      else if (/sacco/i.test(desc))             category = amount > 0 ? "sacco_withdrawal" : "sacco_contribution";
-      else if (/airtime/i.test(desc))           category = "airtime";
-      else if (/loan repay/i.test(desc))        category = "digital_loan_repayment";
-      else if (/loan|tala|branch|okoa/i.test(desc)) category = "digital_loan_received";
-      else if (/buy goods|till|lipa/i.test(desc))   category = "inventory_restock";
-      else if (/salary|wage/i.test(desc))       category = "project_income";
-      else if (/withdraw|agent/i.test(desc))    category = amount > 0 ? "cash_deposit" : "other";
-      else if (amount > 0)                      category = "business_revenue";
+    if (amounts.length < 2) continue;
 
-      txns.push({
-        id:          `${receipt}_${date}`,
-        date,
-        amount,
-        balance,
-        category,
-        description: line.slice(0, 60).trim(),
-        source:      "pdf",
-        receipt,
-      });
-    }
-    return txns;
-  };
+    const balance = amounts[amounts.length - 1];
+    const rawAmt  = amounts[amounts.length - 2];
+
+    // Extract receipt number (Safaricom format: 2 letters + 8+ alphanumeric)
+    const receiptMatch = combined.match(/\b([A-Z]{2}[A-Z0-9]{8,})\b/);
+    const receipt = receiptMatch ? receiptMatch[1] : `PDF${Date.now()}${txns.length}`;
+
+    const desc = combined.toLowerCase();
+    const isOut = /paid to|buy goods|airtime|withdraw|transfer to|fuliza repay|loan repay|till|paybill/i.test(combined);
+    const amount = isOut ? -rawAmt : rawAmt;
+
+    // Auto-categorise
+    let category = "other";
+    if (/fuliza repay/i.test(desc))               category = "fuliza_repayment";
+    else if (/fuliza/i.test(desc))                category = "fuliza_draw";
+    else if (/mshwari|m-shwari/i.test(desc))      category = amount > 0 ? "mshwari_withdrawal" : "mshwari_deposit";
+    else if (/sacco/i.test(desc))                 category = amount > 0 ? "sacco_withdrawal" : "sacco_contribution";
+    else if (/airtime/i.test(desc))               category = "airtime";
+    else if (/loan repay|repayment/i.test(desc))  category = "digital_loan_repayment";
+    else if (/loan|tala|branch|okoa|fuliza received/i.test(desc)) category = "digital_loan_received";
+    else if (/buy goods|till|lipa na mpesa/i.test(desc))          category = "inventory_restock";
+    else if (/paybill/i.test(desc))               category = isOut ? "other" : "business_revenue";
+    else if (/salary|wage/i.test(desc))           category = "project_income";
+    else if (/customer.*received|received from/i.test(desc))      category = "business_revenue";
+    else if (/agent.*deposit|cash deposit/i.test(desc))           category = "cash_deposit";
+    else if (/withdraw|agent/i.test(desc))        category = amount > 0 ? "cash_deposit" : "other";
+    else if (amount > 0)                          category = "business_revenue";
+
+    txns.push({
+      id:          `${receipt}_${date}_${txns.length}`,
+      date,
+      amount,
+      balance,
+      category,
+      description: combined.slice(0, 80).trim(),
+      source:      "pdf",
+      receipt,
+    });
+  }
+  return txns;
+ };
 
   const handleFile = async (e) => {
-        const f = e.target.files?.[0];
-        if (!f) return;
-        setFile(f); setParseError(""); setStage("reading");
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f); setParseError(""); setStage("reading");
 
-        try {
-            const arrayBuffer = await f.arrayBuffer();
-            const bytes = new Uint8Array(arrayBuffer);
+    try {
+        const arrayBuffer = await f.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
 
-            // Check PDF header
-            const headerStr = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]);
-            if (!headerStr.startsWith("%PDF")) {
-            setParseError("This does not look like a PDF file. Please upload your M-PESA statement PDF.");
-            setStage("idle"); return;
-            }
-
-            // ── CHECK IF PASSWORD PROTECTED ──────────────────────────────
-            // Encrypted PDFs contain /Encrypt in their cross-reference table
-            const pdfText = new TextDecoder("latin1").decode(arrayBuffer);
-            const isEncrypted = /\/Encrypt\b/.test(pdfText);
-
-            if (isEncrypted) {
-            // File is password protected — ask for password
-            setStage("password_needed");
-            return;
-            }
-
-            // ── NOT ENCRYPTED — parse directly ───────────────────────────
-            setStage("parsing");
-            const txns = parseStatementText(pdfText);
-
-            if (txns.length > 0) {
-            setParsedTxns(txns);
-            setStage("preview");
-            } else {
-            // Parsed fine but no transactions found — different format
-            setParseError(
-                "No transactions found in this PDF. Make sure you are uploading a Safaricom M-PESA statement (dial *334# → My Account → Statement). If your statement is from a different provider, use the + button to log transactions manually."
-            );
-            setStage("idle");
-            }
-
-        } catch (err) {
-            setParseError("Could not read PDF. Try downloading a fresh copy from Safaricom.");
-            setStage("idle");
+        // Verify PDF header
+        const headerStr = String.fromCharCode(bytes[0],bytes[1],bytes[2],bytes[3],bytes[4]);
+        if (!headerStr.startsWith("%PDF")) {
+        setParseError("This does not look like a PDF file. Please upload your M-PESA statement PDF.");
+        setStage("idle"); return;
         }
-    };
+
+        // Check for encryption before loading pdf.js
+        const rawText = new TextDecoder("latin1").decode(arrayBuffer);
+        const isEncrypted = /\/Encrypt\b/.test(rawText);
+        if (isEncrypted) {
+        setStage("password_needed"); return;
+        }
+
+        // Load pdf.js and extract all text from every page
+        setStage("parsing");
+        const pdfjs = await loadPdfJs();
+        const pdf   = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+
+        let fullText = "";
+        for (let p = 1; p <= pdf.numPages; p++) {
+        const page  = await pdf.getPage(p);
+        const items = await page.getTextContent();
+        // Join items on the same line, separate lines with newline
+        let lastY   = null;
+        for (const item of items.items) {
+            const y = item.transform?.[5];
+            if (lastY !== null && Math.abs(y - lastY) > 3) fullText += "\n";
+            fullText += item.str + " ";
+            lastY = y;
+        }
+        fullText += "\n";
+        }
+
+        const txns = parseStatementText(fullText);
+
+        if (txns.length > 0) {
+        setParsedTxns(txns); setStage("preview");
+        } else {
+        setParseError(
+            "No transactions found in this PDF. Make sure you are uploading a Safaricom M-PESA statement (dial *334# → My Account → Statement). The statement must cover at least 1 month."
+        );
+        setStage("idle");
+        }
+    } catch (err) {
+        console.error("PDF parse error:", err);
+        setParseError("Could not read this PDF. Please try downloading a fresh copy of your statement from Safaricom.");
+        setStage("idle");
+    }
+  };
 
   const handlePasswordSubmit = () => {
     setPwdError("Password-protected PDFs require the Safaricom app to unlock first. Please open the PDF in Adobe Reader with your password, then re-save it without a password and upload again.");
